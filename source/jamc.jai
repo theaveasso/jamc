@@ -6,6 +6,8 @@
 #import "Math";
 Simp :: #import "Simp";
 
+#load "entity.jai";
+
 ASPECT :: (16.0 / 9.0);
 VPIXELS :: 360;
 
@@ -16,6 +18,11 @@ Game_Input :: struct {
     key_right:  u32;
 }
 
+Game_Entity :: struct {
+    entities:               [..]Entity;
+    unused_entity_handles:  [..]Entity_Handle;
+}
+
 Game_State :: struct {
    window_\width    : s32;
    window_height    : s32;
@@ -24,7 +31,11 @@ Game_State :: struct {
    playfield_height : s32;
    frame_count      : int;
 
-   using input : Game_Input;
+   player_handle    : Entity_Handle;
+
+   using entity     : Game_Entity;
+   using input      : Game_Input;
+
    should_quit_game := false;
 }
 
@@ -52,12 +63,23 @@ main :: () {
 
     init_fonts();
 
+    player_handle = create_entity();
+    player := get_entity(player_handle);
+    player.position = .{playfield_width/2., playfield_height/2.};
+
     while !gs.should_quit_game {
         gs.frame_count += 1;
 
         reset_temporary_storage();
 
         process_input();
+
+        move_dir := Vector2.{};
+        if key_left     move_dir.x -= 1;
+        if key_down     move_dir.y -= 1;
+        if key_up       move_dir.y += 1;
+        if key_right    move_dir.x += 1;
+        player.position += normalize(move_dir) * 0.05;
 
         Simp.clear_render_target(.1, .1, .1, 1);
 
@@ -83,6 +105,14 @@ main :: () {
             color := Vector4.{1, 0.8, 0.2, 1.};
             Simp.draw_prepared_text(font, xx window_coords.x, xx window_coords.y, color);
         }
+
+        half := Vector2.{10, 10};
+
+        p0 := player.position + Vector2.{ -half.x, -half.y };
+        p1 := player.position + Vector2.{  half.x, -half.y };
+        p2 := player.position + Vector2.{  half.x,  half.y };
+        p3 := player.position + Vector2.{ -half.x,  half.y };
+        Simp.immediate_quad(p0, p1, p2, p3);
 
         Simp.clear_scissor(); // :PlayfieldAspect
         Simp.swap_buffers(window);
