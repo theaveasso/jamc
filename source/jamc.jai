@@ -9,6 +9,13 @@ Simp :: #import "Simp";
 ASPECT :: (16.0 / 9.0);
 VPIXELS :: 360;
 
+Game_Input :: struct {
+    key_left :  u32;
+    key_down:   u32;
+    key_up:     u32;
+    key_right:  u32;
+}
+
 Game_State :: struct {
    window_\width    : s32;
    window_height    : s32;
@@ -17,7 +24,7 @@ Game_State :: struct {
    playfield_height : s32;
    frame_count      : int;
 
-
+   using input : Game_Input;
    should_quit_game := false;
 }
 
@@ -56,14 +63,24 @@ main :: () {
 
         {
             text := sprint("Frame: %", frame_count);
+            Simp.prepare_text(font, text);
             defer free(text);
 
-            text_width := Simp.prepare_text(font, text);
-            scale := 0.5;
             x := playfield_width / 30.0;
             y := playfield_height - font.character_height;
             window_coords := window_coords_from_absolute(.{x, xx y});
             color := Vector4.{0.5, 0.8, 0.2, 1.};
+            Simp.draw_prepared_text(font, xx window_coords.x, xx window_coords.y, color);
+        }
+        {
+            text := sprint("Left: %, Down: %, Up: %, Right: %", key_left, key_down, key_up, key_right);
+            Simp.prepare_text(font, text);
+            defer free(text);
+
+            x := playfield_width / 30.0;
+            y := playfield_height * .94 - font.character_height;
+            window_coords := window_coords_from_absolute(.{x, xx y});
+            color := Vector4.{1, 0.8, 0.2, 1.};
             Simp.draw_prepared_text(font, xx window_coords.x, xx window_coords.y, color);
         }
 
@@ -88,6 +105,12 @@ process_input :: () {
                 if it.key_pressed {
                     if it.key_code == .ESCAPE gs.should_quit_game = true;
                 }
+
+                key := it.key_code;
+                if key == #char "A" key_left  = it.key_pressed;
+                if key == #char "S" key_down  = it.key_pressed;
+                if key == #char "W" key_up    = it.key_pressed;
+                if key == #char "D" key_right = it.key_pressed;
         }
     }
 }
