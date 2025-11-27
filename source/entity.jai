@@ -1,8 +1,6 @@
 Entity :: struct {
     using position : Vector2;
     velocity :       Vector2;
-
-    generation: s32;
 }
 
 Entity_Handle :: struct {
@@ -10,32 +8,59 @@ Entity_Handle :: struct {
     generation: s32;
 }
 
+init_entities :: () {
+    array_add(*gs.entity.entities, .{});
+    array_add(*gs.entity.generations, 0);
+}
+
 create_entity :: () -> Entity_Handle {
     result : Entity_Handle;
 
-    if (gs.entity.entities.count == 0) array_add(*gs.entity.entities, .{});
-
-	if (gs.entity.unused_entity_handles.count > 0) {
-	    result = pop(*gs.entity.unused_entity_handles);
-		result.generation += 1;
-		gs.entity.entities[result.index].generation = result.generation;
+    using gs.entity;
+	if (unused_entity_handles.count > 0) {
+	    result = pop(*unused_entity_handles);
+		generations[result.index] = result.generation;
 	} else {
-	    array_add(*gs.entity.entities, .{});
 		result.index = xx gs.entity.entities.count;
+		array_add(*entities, .{});
+		array_add(*generations, 0);
 	}
+
+	array_add(*active_entities, result.index);
+	entities[result.index] = .{};
 
     return result;
 }
 
 get_entity :: (handle : Entity_Handle) -> *Entity {
-    result := *gs.entity.entities[0];
-    if (handle.index < gs.entity.entities.count) {
-        stored_generation := gs.entity.entities[handle.index].generation;
+    using gs.entity;
+    result := *entities[0];
+
+    if (handle.index < entities.count) {
+        stored_generation := generations[handle.index];
 
         if (stored_generation == handle.generation) {
-            result = *gs.entity.entities[handle.index];
+            result = *entities[handle.index];
         }
     }
 
     return result;
+}
+
+destroy_entity :: (handle: Entity_Handle) {
+    using gs.entity;
+    if (handle.index > entities.count) return;
+
+    stored_generation := generations[handle.index];
+    if (stored_generation != handle.generation) return;
+
+    generations[handle.index] += 1;
+    array_add(*unused_entity_handles, .{handle.index, handle.generation + 1});
+
+    // for entity_index, i in active_entities {
+    //     if entity_index == handle.index {
+    //         // remove
+    //         brea
+    //     }
+    // }
 }

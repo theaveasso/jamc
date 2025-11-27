@@ -20,7 +20,9 @@ Game_Input :: struct {
 
 Game_Entity :: struct {
     entities:               [..]Entity;
+    generations:            [..]s32;
     unused_entity_handles:  [..]Entity_Handle;
+    active_entities:        [..]s32;
 }
 
 Game_State :: struct {
@@ -62,6 +64,7 @@ main :: () {
     Simp.set_render_target(window);
 
     init_fonts();
+    init_entities();
 
     player_handle = create_entity();
     player := get_entity(player_handle);
