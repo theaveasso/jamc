@@ -1,6 +1,9 @@
+INVALID_ENTITY_HANDLE :: Entity_Handle.{-1, -1};
+
 Entity :: struct {
-    using position : Vector2;
-    velocity :       Vector2;
+    using position: Vector2;
+    velocity:       Vector2;
+    speed:          float;
 }
 
 Entity_Handle :: struct {
@@ -14,14 +17,15 @@ init_entities :: () {
 }
 
 create_entity :: () -> Entity_Handle {
+    using gs.entity;
     result : Entity_Handle;
 
-    using gs.entity;
-	if (unused_entity_handles.count > 0) {
+	if unused_entity_handles.count > 0 {
 	    result = pop(*unused_entity_handles);
 		generations[result.index] = result.generation;
 	} else {
 		result.index = xx gs.entity.entities.count;
+		result.generation = 0;
 		array_add(*entities, .{});
 		array_add(*generations, 0);
 	}

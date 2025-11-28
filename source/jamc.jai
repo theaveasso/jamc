@@ -11,8 +11,20 @@ Simp :: #import "Simp";
 ASPECT :: (16.0 / 9.0);
 VPIXELS :: 360;
 
+TARGET_FPS :: 60;
+TARGET_DT  :: 1.0 / TARGET_FPS;
+
+Game_Time :: struct {
+    delta:      float64;
+    frame:      s32;
+
+    current_dt: float = 0.016667;
+    last_time:  float64;
+    DT_MAX:     float = 0.15;
+}
+
 Game_Input :: struct {
-    key_left :  u32;
+    key_left:   u32;
     key_down:   u32;
     key_up:     u32;
     key_right:  u32;
@@ -31,10 +43,10 @@ Game_State :: struct {
    window_aspect    := ASPECT;
    playfield_\width : s32;
    playfield_height : s32;
-   frame_count      : int;
 
    player_handle    : Entity_Handle;
 
+   using time       : Game_Time;
    using entity     : Game_Entity;
    using input      : Game_Input;
 
@@ -60,6 +72,8 @@ main :: () {
     data_folder = join(base_path, "data");
     print("data_folder is '%'\n", data_folder);
 
+    last_time = seconds_since_init();
+
     window := create_window(window_name="JMAC", width=gs.window_width, height=gs.window_height);
     Simp.set_render_target(window);
 
@@ -69,11 +83,19 @@ main :: () {
     player_handle = create_entity();
     player := get_entity(player_handle);
     player.position = .{playfield_width/2., playfield_height/2.};
+    player.speed    = 200.0;
+
 
     while !gs.should_quit_game {
-        gs.frame_count += 1;
-
+        frame += 1;
         reset_temporary_storage();
+
+        now := seconds_since_init();
+        delta = now - last_time;
+        current_dt = cast(float) delta;
+
+        if current_dt > DT_MAX current_dt = DT_MAX;
+        last_time = now;
 
         process_input();
 
@@ -82,12 +104,13 @@ main :: () {
         if key_down     move_dir.y -= 1;
         if key_up       move_dir.y += 1;
         if key_right    move_dir.x += 1;
-        player.position += normalize(move_dir) * 0.05;
+        if length(move_dir) > 1 move_dir = unit_vector(move_dir);
+        player.position += move_dir * player.speed * current_dt;
 
         Simp.clear_render_target(.1, .1, .1, 1);
 
         {
-            text := sprint("Frame: %", frame_count);
+            text := sprint("Frame: %", frame);
             Simp.prepare_text(font, text);
             defer free(text);
 
@@ -119,6 +142,12 @@ main :: () {
 
         Simp.clear_scissor(); // :PlayfieldAspect
         Simp.swap_buffers(window);
+
+        frame_time := seconds_since_init() - now;
+        if frame_time < TARGET_DT {
+            sleep_ms := cast(s32)((TARGET_DT - frame_time) * 1000.0);
+            if sleep_ms > 0 sleep_milliseconds(sleep_ms);
+        }
     }
 }
 
