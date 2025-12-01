@@ -3,16 +3,23 @@
 #import "Input";
 #import "System";
 #import "String";
+#import "Hash_Table";
 #import "Math";
 Simp :: #import "Simp";
 
 #load "entity.jai";
+#load "event.jai";
 
 ASPECT :: (16.0 / 9.0);
 VPIXELS :: 360;
 
 TARGET_FPS :: 60;
 TARGET_DT  :: 1.0 / TARGET_FPS;
+
+Game_Event :: struct {
+    queue:          [..]JMAC_Event;
+    subscribers:    Table(JMAC_Event_Type, [..]JMAC_Event_Callback_Func);
+}
 
 Game_Time :: struct {
     delta:      float64;
@@ -46,6 +53,7 @@ Game_State :: struct {
 
    player_handle    : Entity_Handle;
 
+   using event      : Game_Event;
    using time       : Game_Time;
    using entity     : Game_Entity;
    using input      : Game_Input;
@@ -59,6 +67,18 @@ font: *Simp.Dynamic_Font;
 
 data_folder : string;
 
+system_a_start_proc :: (event: JMAC_Event) {
+    print("Hello from System A\n");
+}
+
+system_b_start_proc :: inline (event: JMAC_Event) {
+    print("Hello from System B\n");
+}
+
+event_player_offscreen_proc :: (using event: JMAC_Event) {
+    print("The player is off the screen! at position '%','%'", payload.player_offscreen.x, payload.player_offscreen.y);
+}
+
 main :: () {
     base_path := path_strip_filename(get_path_of_running_executable());
     set_working_directory(base_path);
@@ -68,6 +88,17 @@ main :: () {
 
     window_width  = playfield_width;
     window_height = playfield_height;
+
+    event_type_subscribe(.GAME_START, system_a_start_proc);
+    event_type_subscribe(.GAME_START, system_b_start_proc);
+    event_type_subscribe(.PLAYER_OFFSCREEN, event_player_offscreen_proc);
+    {
+        event := JMAC_Event.{
+            type            = .GAME_START,
+            debug_message   = "This is debug string",
+        };
+        event_enqueue(event);
+    }
 
     data_folder = join(base_path, "data");
     print("data_folder is '%'\n", data_folder);
@@ -98,6 +129,7 @@ main :: () {
         last_time = now;
 
         process_input();
+        event_update();
 
         move_dir := Vector2.{};
         if key_left     move_dir.x -= 1;
@@ -142,6 +174,18 @@ main :: () {
 
         Simp.clear_scissor(); // :PlayfieldAspect
         Simp.swap_buffers(window);
+
+        print("player positions x %\n", player.position.x);
+        if player.position.x > 500 {
+            event := JMAC_Event.{
+                type    = .PLAYER_OFFSCREEN,
+                debug_message = "This is test player off screen event",
+                payload = .{
+                    player_offscreen = .{player.position.x, player.position.y},
+                }
+            };
+            event_enqueue(event);
+        }
 
         frame_time := seconds_since_init() - now;
         if frame_time < TARGET_DT {
