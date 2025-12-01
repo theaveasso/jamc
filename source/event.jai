@@ -1,18 +1,15 @@
 JMAC_Event_Type :: enum u32 {
     INVALID;
     GAME_START;
-    PLAYER_OFFSCREEN;
 }
 
 JMAC_Event_Callback_Func :: #type (event: JMAC_Event);
 
 JMAC_Event_Payload_Empty :: struct {}
-JMAC_Event_Payload_Player_Offscreen :: struct { x: float32; y: float32; }
 
 JMAC_Event_Payload :: struct {
     union {
         empty:              JMAC_Event_Payload_Empty;
-        player_offscreen:   JMAC_Event_Payload_Player_Offscreen;
     }
 }
 

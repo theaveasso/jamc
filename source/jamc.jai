@@ -73,18 +73,6 @@ using gs : Game_State;
 
 data_folder : string;
 
-system_a_start_proc :: (event: JMAC_Event) {
-    print("Hello from System A\n");
-}
-
-system_b_start_proc :: inline (event: JMAC_Event) {
-    print("Hello from System B\n");
-}
-
-event_player_offscreen_proc :: (using event: JMAC_Event) {
-    print("The player is off the screen! at position '%','%'", payload.player_offscreen.x, payload.player_offscreen.y);
-}
-
 main :: () {
     base_path := path_strip_filename(get_path_of_running_executable());
     set_working_directory(base_path);
@@ -94,17 +82,6 @@ main :: () {
 
     window_width  = playfield_width;
     window_height = playfield_height;
-
-    event_type_subscribe(.GAME_START, system_a_start_proc);
-    event_type_subscribe(.GAME_START, system_b_start_proc);
-    event_type_subscribe(.PLAYER_OFFSCREEN, event_player_offscreen_proc);
-    {
-        event := JMAC_Event.{
-            type            = .GAME_START,
-            debug_message   = "This is debug string",
-        };
-        event_enqueue(event);
-    }
 
     data_folder = join(base_path, "data");
     print("data_folder is '%'\n", data_folder);
@@ -191,17 +168,6 @@ main :: () {
         Simp.clear_scissor();
         Simp.swap_buffers(window);
 
-        if player.position.x > 500 {
-            event := JMAC_Event.{
-                type    = .PLAYER_OFFSCREEN,
-                debug_message = "This is test player off screen event",
-                payload = .{
-                    player_offscreen = .{player.position.x, player.position.y},
-                }
-            };
-            event_enqueue(event);
-        }
-
         frame_time := seconds_since_init() - now;
         if frame_time < TARGET_DT {
             sleep_ms := cast(s32)((TARGET_DT - frame_time) * 1000.0);
@@ -223,6 +189,7 @@ init_textures :: () {
         result: Texture;
         success := Simp.texture_load_from_file(*result, filename);
 
+        event_enqueue(JMAC_Event.{debug_message = tprint("Loaded texture %", filename)});
         return success, result;
     }
 
