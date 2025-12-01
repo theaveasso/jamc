@@ -5,11 +5,14 @@
 #import "String";
 #import "Hash_Table";
 #import "Math";
+#import "GL";
 Simp :: #import "Simp";
 Texture :: Simp.Texture;
 
 #load "entity.jai";
 #load "event.jai";
+#load "render.jai";
+#load "camera.jai";
 
 ASPECT :: (16.0 / 9.0);
 VPIXELS :: 360;
@@ -23,8 +26,8 @@ Game_Asset :: struct {
 }
 
 Game_Event :: struct {
-    queue:          [..]JMAC_Event;
-    subscribers:    Table(JMAC_Event_Type, [..]JMAC_Event_Callback_Func);
+    queue:          [..]JAMC_Event;
+    subscribers:    Table(JAMC_Event_Type, [..]JAMC_Event_Callback_Func);
 }
 
 Game_Time :: struct {
@@ -59,17 +62,18 @@ Game_State :: struct {
 
    player_handle    : Entity_Handle;
 
+   camera           : Camera;
    using asset      : Game_Asset;
    using event      : Game_Event;
    using time       : Game_Time;
    using entity     : Game_Entity;
    using input      : Game_Input;
 
+   window: Window_Type;
    should_quit_game := false;
 }
 
 using gs : Game_State;
-
 
 data_folder : string;
 
@@ -88,19 +92,18 @@ main :: () {
 
     last_time = seconds_since_init();
 
-    window := create_window(window_name="JMAC", width=gs.window_width, height=gs.window_height);
+    window = create_window(window_name="JAMC", width=gs.window_width, height=gs.window_height);
     Simp.set_render_target(window);
 
     init_fonts();
     init_textures();
 
+    init_camera();
     init_entities();
+    init_rendering_objects();
 
-    player_handle = create_entity();
-    player := get_entity(player_handle);
-    player.position = .{playfield_width/2., playfield_height/2.};
-    player.speed    = 200.0;
-
+    glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     while !gs.should_quit_game {
         frame += 1;
@@ -115,15 +118,11 @@ main :: () {
 
         process_input();
         event_update();
+        camera_update(*camera, current_dt);
 
-        move_dir := Vector2.{};
-        if key_left     move_dir.x -= 1;
-        if key_down     move_dir.y -= 1;
-        if key_up       move_dir.y += 1;
-        if key_right    move_dir.x += 1;
-        if length(move_dir) > 1 move_dir = unit_vector(move_dir);
-        player.position += move_dir * player.speed * current_dt;
-
+        glDepthMask(GL_TRUE);
+        glEnable(GL_DEPTH_TEST);
+        glClear(GL_DEPTH_BUFFER_BIT);
         Simp.clear_render_target(.1, .1, .1, 1);
 
         {
@@ -149,21 +148,14 @@ main :: () {
             Simp.draw_prepared_text(font, xx window_coords.x, xx window_coords.y, color);
         }
 
-        half := Vector2.{50, 50};
+        for i : -10..10
+			draw_line(xyz (xx i, 0, -10), xyz (xx i, 0, 10), .{0.4, 0.4, 0.4, 1});
+		for i : -10..10
+			draw_line(xyz (-10, 0, xx i), xyz (10, 0, xx i), .{0.4, 0.4, 0.4, 1});
 
-        p0 := player.position + Vector2.{ -half.x, -half.y };
-        p1 := player.position + Vector2.{  half.x, -half.y };
-        p2 := player.position + Vector2.{  half.x,  half.y };
-        p3 := player.position + Vector2.{ -half.x,  half.y };
-        Simp.immediate_quad(p0, p1, p2, p3);
-
-        {
-            result, sky_texture := table_find(*textures, "sky");
-            if (result) {
-                Simp.set_shader_for_images(*sky_texture);
-                Simp.immediate_quad(p0, p1, p2, p3);
-            }
-        }
+        draw_line(.{}, .{x=1}, .{x=1, w=1});
+		draw_line(.{}, .{y=1}, .{y=1, w=1});
+		draw_line(.{}, .{z=1}, .{z=1, w=1});
 
         Simp.clear_scissor();
         Simp.swap_buffers(window);
@@ -189,7 +181,7 @@ init_textures :: () {
         result: Texture;
         success := Simp.texture_load_from_file(*result, filename);
 
-        event_enqueue(JMAC_Event.{debug_message = tprint("Loaded texture %", filename)});
+        event_enqueue(JAMC_Event.{debug_message = tprint("Loaded texture %", filename)});
         return success, result;
     }
 
@@ -230,4 +222,8 @@ window_coords_from_absolute :: (v : Vector2) -> Vector2 {
 
     assert(delta >= 0);
     return result;
+}
+
+is_key_down :: inline (key: Key_Code) -> bool {
+    return (input_button_states[cast(s64) key] & .DOWN) != 0;
 }

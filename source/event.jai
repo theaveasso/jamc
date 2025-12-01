@@ -1,35 +1,35 @@
-JMAC_Event_Type :: enum u32 {
+JAMC_Event_Type :: enum u32 {
     INVALID;
     GAME_START;
 }
 
-JMAC_Event_Callback_Func :: #type (event: JMAC_Event);
+JAMC_Event_Callback_Func :: #type (event: JAMC_Event);
 
-JMAC_Event_Payload_Empty :: struct {}
+JAMC_Event_Payload_Empty :: struct {}
 
-JMAC_Event_Payload :: struct {
+JAMC_Event_Payload :: struct {
     union {
-        empty:              JMAC_Event_Payload_Empty;
+        empty: JAMC_Event_Payload_Empty;
     }
 }
 
-JMAC_Event :: struct {
-    type:           JMAC_Event_Type;
-    payload:        JMAC_Event_Payload;
+JAMC_Event :: struct {
+    type:           JAMC_Event_Type;
+    payload:        JAMC_Event_Payload;
     debug_message:  string;
 }
 
-event_type_subscribe :: (type: JMAC_Event_Type, cb: JMAC_Event_Callback_Func) {
+event_type_subscribe :: (type: JAMC_Event_Type, cb: JAMC_Event_Callback_Func) {
     using gs.event;
     subscribers_for_type := inline table_find_pointer(*subscribers, type);
     if subscribers_for_type == null {
-        empty: [..]JMAC_Event_Callback_Func;
+        empty: [..]JAMC_Event_Callback_Func;
         subscribers_for_type = table_add(*subscribers, type, empty);
     }
     array_add(subscribers_for_type, cb);
 }
 
-event_enqueue :: inline (event: JMAC_Event) { array_add(*gs.event.queue, event); }
+event_enqueue :: inline (event: JAMC_Event) { array_add(*gs.event.queue, event); }
 
 event_update :: () {
     if queue.count <= 0 return;
