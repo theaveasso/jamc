@@ -6,6 +6,7 @@
 #import "Hash_Table";
 #import "Math";
 Simp :: #import "Simp";
+Texture :: Simp.Texture;
 
 #load "entity.jai";
 #load "event.jai";
@@ -15,6 +16,11 @@ VPIXELS :: 360;
 
 TARGET_FPS :: 60;
 TARGET_DT  :: 1.0 / TARGET_FPS;
+
+Game_Asset :: struct {
+    font: *Simp.Dynamic_Font;
+    textures: Table(string, Texture);
+}
 
 Game_Event :: struct {
     queue:          [..]JMAC_Event;
@@ -53,6 +59,7 @@ Game_State :: struct {
 
    player_handle    : Entity_Handle;
 
+   using asset      : Game_Asset;
    using event      : Game_Event;
    using time       : Game_Time;
    using entity     : Game_Entity;
@@ -63,7 +70,6 @@ Game_State :: struct {
 
 using gs : Game_State;
 
-font: *Simp.Dynamic_Font;
 
 data_folder : string;
 
@@ -109,6 +115,8 @@ main :: () {
     Simp.set_render_target(window);
 
     init_fonts();
+    init_textures();
+
     init_entities();
 
     player_handle = create_entity();
@@ -164,7 +172,7 @@ main :: () {
             Simp.draw_prepared_text(font, xx window_coords.x, xx window_coords.y, color);
         }
 
-        half := Vector2.{10, 10};
+        half := Vector2.{50, 50};
 
         p0 := player.position + Vector2.{ -half.x, -half.y };
         p1 := player.position + Vector2.{  half.x, -half.y };
@@ -172,10 +180,17 @@ main :: () {
         p3 := player.position + Vector2.{ -half.x,  half.y };
         Simp.immediate_quad(p0, p1, p2, p3);
 
-        Simp.clear_scissor(); // :PlayfieldAspect
+        {
+            result, sky_texture := table_find(*textures, "sky");
+            if (result) {
+                Simp.set_shader_for_images(*sky_texture);
+                Simp.immediate_quad(p0, p1, p2, p3);
+            }
+        }
+
+        Simp.clear_scissor();
         Simp.swap_buffers(window);
 
-        print("player positions x %\n", player.position.x);
         if player.position.x > 500 {
             event := JMAC_Event.{
                 type    = .PLAYER_OFFSCREEN,
@@ -199,6 +214,20 @@ init_fonts :: () {
     pixel_height := playfield_height / 14;
     font = Simp.get_font_at_size(data_folder, "yoster.ttf", pixel_height);
     assert(font != null);
+}
+
+init_textures :: () {
+    make_texture :: (name: string) -> bool, Texture {
+        filename := tprint("%/%", data_folder, name);
+
+        result: Texture;
+        success := Simp.texture_load_from_file(*result, filename);
+
+        return success, result;
+    }
+
+    success, sky := make_texture("sky.png");
+    table_add(*textures, copy_string("sky"), sky);
 }
 
 process_input :: () {
