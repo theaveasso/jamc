@@ -22,18 +22,22 @@ init_camera :: () {
     camera.euler_angles.y =  10 * PI / 180.0;
 }
 
-camera_update :: (using camera: *Camera, delta_time: float) {
+camera_update :: (delta_time: float) {
+    using gs.camera;
     mouse_delta: Vector2;
     move_input : Vector3;
     move_speed : float;
 
-    move_speed = FLY_SPEED;
-    if is_key_down(.SHIFT) then move_speed *= 10;
-    move_speed *= delta_time;
-    move_input.x = cast(float) is_key_down (xx #char "D") - cast(float) is_key_down(xx #char "A");
-    move_input.y = cast(float) is_key_down (xx #char "E") - cast(float) is_key_down(xx #char "Q");
-    move_input.z = cast(float) is_key_down (xx #char "S") - cast(float) is_key_down(xx #char "W");
-    move_input = rotate(unit_vector(move_input), rotation);
+    if _camera.control_camera {
+        move_speed = FLY_SPEED;
+        mouse_delta = xy(xx mouse_delta_x, xx mouse_delta_y);
+        if is_key_down(.SHIFT) then move_speed *= 10;
+        move_speed *= delta_time;
+        move_input.x = cast(float) key_right - cast(float) key_left;
+        move_input.y = cast(float) is_key_down (xx #char "E") - cast(float) is_key_down(xx #char "Q");
+        move_input.z = cast(float) key_down - cast(float) key_up;
+        move_input = rotate(unit_vector(move_input), rotation);
+    }
 
     position += move_input * move_speed;
     rotation_input = lerp(rotation_input, mouse_delta, ROTATION_SMOOTHING);

@@ -20,6 +20,11 @@ VPIXELS :: 360;
 TARGET_FPS :: 60;
 TARGET_DT  :: 1.0 / TARGET_FPS;
 
+Game_Camera :: struct {
+    using camera    : Camera;
+    control_camera  : bool;
+}
+
 Game_Asset :: struct {
     font: *Simp.Dynamic_Font;
     textures: Table(string, Texture);
@@ -62,7 +67,7 @@ Game_State :: struct {
 
    player_handle    : Entity_Handle;
 
-   camera           : Camera;
+   using _camera    : Game_Camera;
    using asset      : Game_Asset;
    using event      : Game_Event;
    using time       : Game_Time;
@@ -118,7 +123,7 @@ main :: () {
 
         process_input();
         event_update();
-        camera_update(*camera, current_dt);
+        camera_update(current_dt);
 
         glDepthMask(GL_TRUE);
         glEnable(GL_DEPTH_TEST);
@@ -196,16 +201,23 @@ process_input :: () {
             case .QUIT;
                 gs.should_quit_game = true;
             case .KEYBOARD;
+                key := it.key_code;
                 if it.key_pressed {
-                    if it.key_code == .ESCAPE gs.should_quit_game = true;
+                    if key == .ESCAPE gs.should_quit_game = true;
+                    if key == #char "F" set_camera_control(!gs._camera.control_camera);
                 }
 
-                key := it.key_code;
                 if key == #char "A" key_left  = it.key_pressed;
                 if key == #char "S" key_down  = it.key_pressed;
                 if key == #char "W" key_up    = it.key_pressed;
                 if key == #char "D" key_right = it.key_pressed;
         }
+    }
+
+    if !input_application_has_focus && control_camera then set_camera_control(false);
+    if _camera.control_camera {
+        x, y, w, h := get_dimensions(window, false);
+        set_mouse_pointer_position(w / 2, h / 2);
     }
 }
 
@@ -226,4 +238,34 @@ window_coords_from_absolute :: (v : Vector2) -> Vector2 {
 
 is_key_down :: inline (key: Key_Code) -> bool {
     return (input_button_states[cast(s64) key] & .DOWN) != 0;
+}
+
+set_camera_control :: inline (control : bool) {
+	_camera.control_camera = control;
+	if _camera.control_camera hide_cursor();
+	else show_cursor();
+}
+
+hide_cursor :: inline () {
+    #if OS == .WINDOWS {
+		win32 :: #import "Windows";
+		win32.ShowCursor(0);
+	}
+}
+
+show_cursor :: inline () {
+    #if OS == .WINDOWS {
+		win32 :: #import "Windows";
+		win32.ShowCursor(1);
+	}
+}
+
+set_mouse_pointer_position :: inline (x : int, y : int)
+{
+	#if OS == .WINDOWS
+	{
+		user32 :: #library,system "User32";
+		SetCursorPos :: (x : s32, y : s32) -> s32 #foreign user32;
+		SetCursorPos(xx x, xx y);
+	}
 }
