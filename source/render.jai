@@ -1,4 +1,5 @@
- line_shader, line_vao, line_vbo: GLuint;
+ line_shader, line_vao, line_vbo : GLuint;
+ cube_shader, cube_vao, cube_vbo : GLuint;
 
  Vertex_Pos_Color :: struct {
      position:  Vector3;
@@ -94,6 +95,7 @@
  init_rendering_objects :: () -> bool {
      ok : bool;
      ok, line_shader = create_shader_program(LINE_VERTEX_SHADER, LINE_FRAGMENT_SHADER);
+     ok, cube_shader = create_shader_program(CUBE_VERTEX_SHADER, CUBE_FRAGMENT_SHADER);
      if !ok then return false;
 
      glGenVertexArrays(1, *line_vao);
@@ -102,6 +104,21 @@
      glGenBuffers(1, *line_vbo);
      glBindBuffer(GL_ARRAY_BUFFER, line_vbo);
      glBufferData(GL_ARRAY_BUFFER, size_of(Vertex_Pos_Color) * 2, null, GL_DYNAMIC_DRAW);
+     glEnableVertexAttribArray(0);
+     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, size_of(Vertex_Pos_Color), cast(*void) 0);
+     glEnableVertexAttribArray(1);
+     glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, size_of(Vertex_Pos_Color), cast(*void) size_of(Vector3));
+
+     glBindVertexArray(0);
+     glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+     glGenVertexArrays(1, *cube_vao);
+     glBindVertexArray(cube_vao);
+
+     glGenBuffers(1, *cube_vbo);
+     glBindBuffer(GL_ARRAY_BUFFER, cube_vbo);
+     glBufferData(GL_ARRAY_BUFFER, size_of(Vertex_Pos_Color) * 36, null, GL_DYNAMIC_DRAW);
+
      glEnableVertexAttribArray(0);
      glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, size_of(Vertex_Pos_Color), cast(*void) 0);
      glEnableVertexAttribArray(1);
@@ -133,6 +150,66 @@
 	glDrawArrays(GL_LINES, 0, 2);
  }
 
+draw_cube :: (position : Vector3, size : float, color : Vector4) {
+    half_size := size * 0.5;
+    vertices : [36]Vertex_Pos_Color = ---;
+
+    // Front face
+    vertices[0]  = .{position + .{-half_size, -half_size,  half_size}, color};
+    vertices[1]  = .{position + .{ half_size, -half_size,  half_size}, color};
+    vertices[2]  = .{position + .{ half_size,  half_size,  half_size}, color};
+    vertices[3]  = .{position + .{-half_size, -half_size,  half_size}, color};
+    vertices[4]  = .{position + .{ half_size,  half_size,  half_size}, color};
+    vertices[5]  = .{position + .{-half_size,  half_size,  half_size}, color};
+
+    // Back face
+    vertices[6]  = .{position + .{ half_size, -half_size, -half_size}, color};
+    vertices[7]  = .{position + .{-half_size, -half_size, -half_size}, color};
+    vertices[8]  = .{position + .{-half_size,  half_size, -half_size}, color};
+    vertices[9]  = .{position + .{ half_size, -half_size, -half_size}, color};
+    vertices[10] = .{position + .{-half_size,  half_size, -half_size}, color};
+    vertices[11] = .{position + .{ half_size,  half_size, -half_size}, color};
+
+    // Top face
+    vertices[12] = .{position + .{-half_size,  half_size,  half_size}, color};
+    vertices[13] = .{position + .{ half_size,  half_size,  half_size}, color};
+    vertices[14] = .{position + .{ half_size,  half_size, -half_size}, color};
+    vertices[15] = .{position + .{-half_size,  half_size,  half_size}, color};
+    vertices[16] = .{position + .{ half_size,  half_size, -half_size}, color};
+    vertices[17] = .{position + .{-half_size,  half_size, -half_size}, color};
+
+    // Bottom face
+    vertices[18] = .{position + .{-half_size, -half_size, -half_size}, color};
+    vertices[19] = .{position + .{ half_size, -half_size, -half_size}, color};
+    vertices[20] = .{position + .{ half_size, -half_size,  half_size}, color};
+    vertices[21] = .{position + .{-half_size, -half_size, -half_size}, color};
+    vertices[22] = .{position + .{ half_size, -half_size,  half_size}, color};
+    vertices[23] = .{position + .{-half_size, -half_size,  half_size}, color};
+
+    // Right face
+    vertices[24] = .{position + .{ half_size, -half_size,  half_size}, color};
+    vertices[25] = .{position + .{ half_size, -half_size, -half_size}, color};
+    vertices[26] = .{position + .{ half_size,  half_size, -half_size}, color};
+    vertices[27] = .{position + .{ half_size, -half_size,  half_size}, color};
+    vertices[28] = .{position + .{ half_size,  half_size, -half_size}, color};
+    vertices[29] = .{position + .{ half_size,  half_size,  half_size}, color};
+
+    // Left face
+    vertices[30] = .{position + .{-half_size, -half_size, -half_size}, color};
+    vertices[31] = .{position + .{-half_size, -half_size,  half_size}, color};
+    vertices[32] = .{position + .{-half_size,  half_size,  half_size}, color};
+    vertices[33] = .{position + .{-half_size, -half_size, -half_size}, color};
+    vertices[34] = .{position + .{-half_size,  half_size,  half_size}, color};
+    vertices[35] = .{position + .{-half_size,  half_size, -half_size}, color};
+
+    glBindVertexArray(cube_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, cube_vbo);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, size_of(Vertex_Pos_Color) * 36, vertices.data);
+    glUseProgram(cube_shader);
+    glUniformMatrix4fv(glGetUniformLocation(cube_shader, "u_View_Projection_Matrix"), 1, GL_TRUE, *camera.view_projection_matrix.coef[0][0]);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+}
+
 SHADER_PREFIX :: #string END
 #version 330 core
 END
@@ -153,6 +230,32 @@ void main () {
 GLSL
 
 LINE_FRAGMENT_SHADER :: #string GLSL
+
+in vec4 Color;
+
+out vec4 Frag_Color;
+
+void main () {
+    Frag_Color = Color;
+}
+GLSL
+
+CUBE_VERTEX_SHADER :: #string GLSL
+
+layout (location = 0) in vec3 a_Position;
+layout (location = 1) in vec4 a_Color;
+
+uniform mat4 u_View_Projection_Matrix;
+
+out vec4 Color;
+
+void main () {
+    gl_Position = u_View_Projection_Matrix * vec4 (a_Position, 1);
+    Color = a_Color;
+}
+GLSL
+
+CUBE_FRAGMENT_SHADER :: #string GLSL
 
 in vec4 Color;
 

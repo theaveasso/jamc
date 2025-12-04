@@ -9,10 +9,11 @@
 Simp :: #import "Simp";
 Texture :: Simp.Texture;
 
+#load "camera.jai";
 #load "entity.jai";
 #load "event.jai";
 #load "render.jai";
-#load "camera.jai";
+#load "world.jai";
 
 ASPECT :: (16.0 / 9.0);
 VPIXELS :: 360;
@@ -161,6 +162,8 @@ main :: () {
         draw_line(.{}, .{x=1}, .{x=1, w=1});
 		draw_line(.{}, .{y=1}, .{y=1, w=1});
 		draw_line(.{}, .{z=1}, .{z=1, w=1});
+
+		draw_cube(.{0, 0, 1}, 1.0, .{1, 0, 0, 1});
 
         Simp.clear_scissor();
         Simp.swap_buffers(window);
