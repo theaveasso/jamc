@@ -106,7 +106,19 @@ main :: () {
 
     init_camera();
     init_entities();
+
+    model_matrices : [CHUNK_SIZE]Matrix4 = ---;
+	block_size := make_scale_matrix4(xyz(3));
+	for *model, index : model_matrices {
+		x := index % CHUNK_SIZE_X;
+		z := (index / CHUNK_SIZE_X) % CHUNK_SIZE_Y;
+		y := index / (CHUNK_SIZE_X * CHUNK_SIZE_Y);
+		model.* = make_translation_matrix4(.{0, 0, 0}) * block_size;
+	}
     init_rendering_objects();
+
+    glBindBuffer(GL_ARRAY_BUFFER, chunk_vbo);
+    glBufferData(GL_ARRAY_BUFFER, 0, size_of(Vertex_Pos_Color) * 36, cube_vertices.data);
 
     glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -131,29 +143,6 @@ main :: () {
         glClear(GL_DEPTH_BUFFER_BIT);
         Simp.clear_render_target(.1, .1, .1, 1);
 
-        {
-            text := sprint("Frame: %", frame);
-            Simp.prepare_text(font, text);
-            defer free(text);
-
-            x := playfield_width / 30.0;
-            y := playfield_height - font.character_height;
-            window_coords := window_coords_from_absolute(.{x, xx y});
-            color := Vector4.{0.5, 0.8, 0.2, 1.};
-            Simp.draw_prepared_text(font, xx window_coords.x, xx window_coords.y, color);
-        }
-        {
-            text := sprint("Left: %, Down: %, Up: %, Right: %", key_left, key_down, key_up, key_right);
-            Simp.prepare_text(font, text);
-            defer free(text);
-
-            x := playfield_width / 30.0;
-            y := playfield_height * .94 - font.character_height;
-            window_coords := window_coords_from_absolute(.{x, xx y});
-            color := Vector4.{1, 0.8, 0.2, 1.};
-            Simp.draw_prepared_text(font, xx window_coords.x, xx window_coords.y, color);
-        }
-
         for i : -10..10
 			draw_line(xyz (xx i, 0, -10), xyz (xx i, 0, 10), .{0.4, 0.4, 0.4, 1});
 		for i : -10..10
@@ -163,7 +152,7 @@ main :: () {
 		draw_line(.{}, .{y=1}, .{y=1, w=1});
 		draw_line(.{}, .{z=1}, .{z=1, w=1});
 
-		draw_cube(.{0, 0, 1}, 1.0, .{1, 0, 0, 1});
+		draw_chunk(model_matrices);
 
         Simp.clear_scissor();
         Simp.swap_buffers(window);

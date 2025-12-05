@@ -56,6 +56,6 @@ camera_update :: (delta_time: float) {
 
     vx, vy, vw, vh := get_dimensions(gs.window, false);
     aspect_ratio := vw / cast(float) vh;
-    projection_matrix = make_projection_matrix(fov * PI / 180.0, aspect_ratio, 0.1, 1000.0);
+    projection_matrix = make_projection_matrix(fov * PI / 180.0, aspect_ratio, 0.001, 1000.0);
     view_projection_matrix = projection_matrix * view_matrix;
 }

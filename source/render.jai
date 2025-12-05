@@ -1,21 +1,19 @@
- line_shader, line_vao, line_vbo : GLuint;
- cube_shader, cube_vao, cube_vbo : GLuint;
+line_shader, line_vao, line_vbo : GLuint;
+cube_shader, cube_vao, cube_vbo : GLuint;
+chunk_shader, chunk_vao, chunk_vbo, chunk_instance_vbo : GLuint;
 
- Vertex_Pos_Color :: struct {
-     position:  Vector3;
-     color:     Vector4;
- }
+Vertex_Pos_Color :: struct {
+    position:  Vector3;
+    color:     Vector4;
+}
 
- #scope_file
+#scope_file
 
- create_shader_program :: (vertex_source : string, fragment_source : string) -> bool, GLuint
- {
-	check_compile_errors :: (shader : GLuint) -> bool, info_log: string
-	{
+create_shader_program :: (vertex_source : string, fragment_source : string) -> bool, GLuint {
+    check_compile_errors :: (shader : GLuint) -> bool, info_log: string {
 		success : s32;
 		glGetShaderiv(shader, GL_COMPILE_STATUS, *success);
-		if !success
-		{
+		if !success {
 			info_len : s32;
 			glGetShaderiv(shader, GL_INFO_LOG_LENGTH, *info_len);
 			info_data := cast (*u8) alloc (info_len,, temp);
@@ -30,12 +28,10 @@
 		return true, "";
 	}
 
-	check_link_errors :: (program : GLuint) -> bool, info_log : string
-	{
+	check_link_errors :: (program : GLuint) -> bool, info_log : string {
 		success : s32;
 		glGetProgramiv(program, GL_LINK_STATUS, *success);
-		if !success
-		{
+		if !success {
 			info_len : s32;
 			glGetProgramiv(program, GL_INFO_LOG_LENGTH, *info_len);
 			info_data := cast (*u8) alloc (info_len,, temp);
@@ -80,8 +76,7 @@
 	glAttachShader(result, fs);
 	glLinkProgram(result);
 	ok, info_log = check_link_errors(result);
-	if !ok
-	{
+	if !ok {
 		log_error("Could not link shader program: %", info_log);
 		glDeleteProgram(result);
 		return false, 0;
@@ -90,121 +85,109 @@
 	return true, result;
  }
 
- #scope_export
+#scope_export
 
- init_rendering_objects :: () -> bool {
-     ok : bool;
-     ok, line_shader = create_shader_program(LINE_VERTEX_SHADER, LINE_FRAGMENT_SHADER);
-     ok, cube_shader = create_shader_program(CUBE_VERTEX_SHADER, CUBE_FRAGMENT_SHADER);
-     if !ok then return false;
+init_rendering_objects :: () -> bool {
+    ok : bool;
+    ok, line_shader  = create_shader_program(LINE_VERTEX_SHADER, LINE_FRAGMENT_SHADER);
+    ok, cube_shader  = create_shader_program(CUBE_VERTEX_SHADER, CUBE_FRAGMENT_SHADER);
+    ok, chunk_shader = create_shader_program(CUBE_INSTANCING_VERTEX_SHADER, CUBE_FRAGMENT_SHADER);
+    if !ok then return false;
 
-     glGenVertexArrays(1, *line_vao);
-     glBindVertexArray(line_vao);
+    glGenVertexArrays(1, *line_vao);
+    glBindVertexArray(line_vao);
 
-     glGenBuffers(1, *line_vbo);
-     glBindBuffer(GL_ARRAY_BUFFER, line_vbo);
-     glBufferData(GL_ARRAY_BUFFER, size_of(Vertex_Pos_Color) * 2, null, GL_DYNAMIC_DRAW);
-     glEnableVertexAttribArray(0);
-     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, size_of(Vertex_Pos_Color), cast(*void) 0);
-     glEnableVertexAttribArray(1);
-     glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, size_of(Vertex_Pos_Color), cast(*void) size_of(Vector3));
+    glGenBuffers(1, *line_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, line_vbo);
+    glBufferData(GL_ARRAY_BUFFER, size_of(Vertex_Pos_Color) * 2, null, GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, size_of(Vertex_Pos_Color), cast(*void) 0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, size_of(Vertex_Pos_Color), cast(*void) size_of(Vector3));
 
-     glBindVertexArray(0);
-     glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-     glGenVertexArrays(1, *cube_vao);
-     glBindVertexArray(cube_vao);
+    glGenVertexArrays(1, *cube_vao);
+    glBindVertexArray(cube_vao);
 
-     glGenBuffers(1, *cube_vbo);
-     glBindBuffer(GL_ARRAY_BUFFER, cube_vbo);
-     glBufferData(GL_ARRAY_BUFFER, size_of(Vertex_Pos_Color) * 36, null, GL_DYNAMIC_DRAW);
+    glGenBuffers(1, *cube_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, cube_vbo);
+    glBufferData(GL_ARRAY_BUFFER, size_of(Vertex_Pos_Color) * 36, null, GL_DYNAMIC_DRAW);
 
-     glEnableVertexAttribArray(0);
-     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, size_of(Vertex_Pos_Color), cast(*void) 0);
-     glEnableVertexAttribArray(1);
-     glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, size_of(Vertex_Pos_Color), cast(*void) size_of(Vector3));
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, size_of(Vertex_Pos_Color), cast(*void) 0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, size_of(Vertex_Pos_Color), cast(*void) size_of(Vector3));
 
-     glBindVertexArray(0);
-     glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-     event_enqueue(.{debug_message = "Rendering Objects initialized!"});
-     return true;
- }
+    glGenVertexArrays(1, *chunk_vao);
+    glBindVertexArray(chunk_vao);
 
- draw_line :: inline (start : Vector3, end : Vector3, color : Vector4) {
-     draw_line(start, end, color, color);
- }
+    glGenBuffers(1, *chunk_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, chunk_vbo);
+    glBufferData(GL_ARRAY_BUFFER, size_of(Vertex_Pos_Color) * 36, null, GL_DYNAMIC_DRAW);
 
- draw_line :: (start : Vector3, end : Vector3, start_color : Vector4, end_color : Vector4) {
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, size_of(Vertex_Pos_Color), cast(*void) 0);
+
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, size_of(Vertex_Pos_Color), cast(*void) size_of(Vector3));
+
+    glGenBuffers(1, *chunk_instance_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, chunk_instance_vbo);
+    glBufferData(GL_ARRAY_BUFFER, 0, null, GL_DYNAMIC_DRAW);
+
+    for i: 0..3 {
+        glEnableVertexAttribArray(xx (2 + i));
+        glVertexAttribPointer(xx (2 + i), 4, GL_FLOAT, GL_FALSE, size_of(Matrix4), cast(*void)(size_of(Vector4) * i));
+        glEnableVertexAttribArray(xx (2 + i));
+    }
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    event_enqueue(.{debug_message = "Rendering Objects initialized!"});
+    return true;
+}
+
+draw_line :: inline (start : Vector3, end : Vector3, color : Vector4) {
+    draw_line(start, end, color, color);
+}
+
+draw_line :: (start : Vector3, end : Vector3, start_color : Vector4, end_color : Vector4) {
     data : [2]Vertex_Pos_Color = ---;
-	data[0].position = start;
-	data[0].color    = start_color;
-	data[1].position = end;
-	data[1].color    = end_color;
+    data[0].position = start;
+    data[0].color    = start_color;
+    data[1].position = end;
+    data[1].color    = end_color;
 
-	glBindVertexArray(line_vao);
-	glBindBuffer(GL_ARRAY_BUFFER, line_vbo);
-	glBufferSubData(GL_ARRAY_BUFFER, 0, size_of (Vertex_Pos_Color) * 2, data.data);
-	glUseProgram(line_shader);
-	glUniformMatrix4fv(glGetUniformLocation(line_shader, "u_View_Projection_Matrix"), 1, GL_TRUE, *camera.view_projection_matrix.coef[0][0]);
-	glDrawArrays(GL_LINES, 0, 2);
- }
+    glBindVertexArray(line_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, line_vbo);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, size_of (Vertex_Pos_Color) * 2, data.data);
+    glUseProgram(line_shader);
+    glUniformMatrix4fv(glGetUniformLocation(line_shader, "u_View_Projection_Matrix"), 1, GL_TRUE, *camera.view_projection_matrix.coef[0][0]);
+    glDrawArrays(GL_LINES, 0, 2);
+}
 
-draw_cube :: (position : Vector3, size : float, color : Vector4) {
-    half_size := size * 0.5;
-    vertices : [36]Vertex_Pos_Color = ---;
+draw_chunk :: (model_matrices : []Matrix4) {
+    glBindBuffer(GL_ARRAY_BUFFER, chunk_instance_vbo);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, model_matrices.count * size_of(Matrix4), model_matrices.data);
 
-    // Front face
-    vertices[0]  = .{position + .{-half_size, -half_size,  half_size}, color};
-    vertices[1]  = .{position + .{ half_size, -half_size,  half_size}, color};
-    vertices[2]  = .{position + .{ half_size,  half_size,  half_size}, color};
-    vertices[3]  = .{position + .{-half_size, -half_size,  half_size}, color};
-    vertices[4]  = .{position + .{ half_size,  half_size,  half_size}, color};
-    vertices[5]  = .{position + .{-half_size,  half_size,  half_size}, color};
+    glUseProgram(chunk_shader);
+    glBindVertexArray(chunk_vao);
+    glUniformMatrix4fv(glGetUniformLocation(chunk_shader, "u_View_Projection_Matrix"), 1, GL_FALSE, *camera.view_projection_matrix.coef[0][0]);
+    glDrawArraysInstanced(GL_TRIANGLES, 0, 36, xx model_matrices.count);
 
-    // Back face
-    vertices[6]  = .{position + .{ half_size, -half_size, -half_size}, color};
-    vertices[7]  = .{position + .{-half_size, -half_size, -half_size}, color};
-    vertices[8]  = .{position + .{-half_size,  half_size, -half_size}, color};
-    vertices[9]  = .{position + .{ half_size, -half_size, -half_size}, color};
-    vertices[10] = .{position + .{-half_size,  half_size, -half_size}, color};
-    vertices[11] = .{position + .{ half_size,  half_size, -half_size}, color};
+    glBindVertexArray(0);
+}
 
-    // Top face
-    vertices[12] = .{position + .{-half_size,  half_size,  half_size}, color};
-    vertices[13] = .{position + .{ half_size,  half_size,  half_size}, color};
-    vertices[14] = .{position + .{ half_size,  half_size, -half_size}, color};
-    vertices[15] = .{position + .{-half_size,  half_size,  half_size}, color};
-    vertices[16] = .{position + .{ half_size,  half_size, -half_size}, color};
-    vertices[17] = .{position + .{-half_size,  half_size, -half_size}, color};
-
-    // Bottom face
-    vertices[18] = .{position + .{-half_size, -half_size, -half_size}, color};
-    vertices[19] = .{position + .{ half_size, -half_size, -half_size}, color};
-    vertices[20] = .{position + .{ half_size, -half_size,  half_size}, color};
-    vertices[21] = .{position + .{-half_size, -half_size, -half_size}, color};
-    vertices[22] = .{position + .{ half_size, -half_size,  half_size}, color};
-    vertices[23] = .{position + .{-half_size, -half_size,  half_size}, color};
-
-    // Right face
-    vertices[24] = .{position + .{ half_size, -half_size,  half_size}, color};
-    vertices[25] = .{position + .{ half_size, -half_size, -half_size}, color};
-    vertices[26] = .{position + .{ half_size,  half_size, -half_size}, color};
-    vertices[27] = .{position + .{ half_size, -half_size,  half_size}, color};
-    vertices[28] = .{position + .{ half_size,  half_size, -half_size}, color};
-    vertices[29] = .{position + .{ half_size,  half_size,  half_size}, color};
-
-    // Left face
-    vertices[30] = .{position + .{-half_size, -half_size, -half_size}, color};
-    vertices[31] = .{position + .{-half_size, -half_size,  half_size}, color};
-    vertices[32] = .{position + .{-half_size,  half_size,  half_size}, color};
-    vertices[33] = .{position + .{-half_size, -half_size, -half_size}, color};
-    vertices[34] = .{position + .{-half_size,  half_size,  half_size}, color};
-    vertices[35] = .{position + .{-half_size,  half_size, -half_size}, color};
-
+draw_cube :: () {
     glBindVertexArray(cube_vao);
     glBindBuffer(GL_ARRAY_BUFFER, cube_vbo);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, size_of(Vertex_Pos_Color) * 36, vertices.data);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, size_of(Vertex_Pos_Color) * 36, cube_vertices.data);
     glUseProgram(cube_shader);
     glUniformMatrix4fv(glGetUniformLocation(cube_shader, "u_View_Projection_Matrix"), 1, GL_TRUE, *camera.view_projection_matrix.coef[0][0]);
     glDrawArrays(GL_TRIANGLES, 0, 36);
@@ -251,6 +234,22 @@ out vec4 Color;
 
 void main () {
     gl_Position = u_View_Projection_Matrix * vec4 (a_Position, 1);
+    Color = a_Color;
+}
+GLSL
+
+CUBE_INSTANCING_VERTEX_SHADER :: #string GLSL
+
+layout (location = 0) in vec3 a_Position;
+layout (location = 1) in vec4 a_Color;
+layout (location = 2) in mat4 a_Model_Matrix;
+
+uniform mat4 u_View_Projection_Matrix;
+
+out vec4 Color;
+
+void main () {
+    gl_Position = u_View_Projection_Matrix * a_Model_Matrix * vec4(a_Position, 1);
     Color = a_Color;
 }
 GLSL
