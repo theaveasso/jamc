@@ -2,7 +2,9 @@
 #import "Window_Creation";
 #import "Input";
 #import "System";
+#import "File_Utilities";
 #import "String";
+#import "Sort";
 #import "Hash_Table";
 #import "Math";
 #import "GL";
@@ -14,6 +16,7 @@ Texture :: Simp.Texture;
 #load "event.jai";
 #load "render.jai";
 #load "world.jai";
+#load "texture.jai";
 
 ASPECT :: (16.0 / 9.0);
 VPIXELS :: 360;
@@ -107,25 +110,21 @@ main :: () {
     init_camera();
     init_entities();
 
-    model_matrices : [BLOCK_PER_CHUNK]Matrix4 = ---;
+    test_chunk : JAMC_Chunk = ---;
 	block_size := make_scale_matrix4(xyz(0.5));
 	current_index := 0;
 	for y: 0..CHUNK_SIZE_Y - 1 {
 	    for z: 0..CHUNK_SIZE_Z - 1 {
 			for x: 0..CHUNK_SIZE_X - 1 {
+			    using test_chunk;
 			    position := Vector3.{xx x, xx y, xx z};
 				model := make_translation_matrix4(position) * block_size;
-				model_matrices[current_index] = transpose(model);
+				blocks[current_index].model = transpose(model);
+				blocks[current_index].texture_id = 0.;
 				current_index += 1;
 			}
 		}
 	}
-	// for *model, index : model_matrices {
-	// 	x := index % CHUNK_SIZE_X;
-	// 	z := (index / CHUNK_SIZE_X) % CHUNK_SIZE_Y;
-	// 	y := index / (CHUNK_SIZE_X * CHUNK_SIZE_Y);
-	// 	model.* = make_translation_matrix4(xyz(.[xx x, xx y, xx z])) * block_size;
-	// }
     init_rendering_objects();
 
     glEnable(GL_BLEND);
@@ -160,7 +159,7 @@ main :: () {
 		draw_line(.{}, .{y=1}, .{y=1, w=1});
 		draw_line(.{}, .{z=1}, .{z=1, w=1});
 
-		draw_chunk(model_matrices);
+		draw_chunk(*test_chunk);
 
         Simp.clear_scissor();
         Simp.swap_buffers(window);
@@ -177,21 +176,6 @@ init_fonts :: () {
     pixel_height := playfield_height / 14;
     font = Simp.get_font_at_size(data_folder, "yoster.ttf", pixel_height);
     assert(font != null);
-}
-
-init_textures :: () {
-    make_texture :: (name: string) -> bool, Texture {
-        filename := tprint("%/%", data_folder, name);
-
-        result: Texture;
-        success := Simp.texture_load_from_file(*result, filename);
-
-        event_enqueue(JAMC_Event.{debug_message = tprint("Loaded texture %", filename)});
-        return success, result;
-    }
-
-    success, sky := make_texture("sky.png");
-    table_add(*textures, copy_string("sky"), sky);
 }
 
 process_input :: () {

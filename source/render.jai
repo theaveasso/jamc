@@ -2,9 +2,14 @@ line_shader, line_vao, line_vbo : GLuint;
 block_vbo : GLuint;
 chunk_shader, chunk_vao, chunk_instance_vbo : GLuint;
 
-Vertex_Pos_Color :: struct {
-    position:  Vector3;
-    color:     Vector4;
+JAMC_Block_Vertex :: struct {
+    position:   Vector3;
+    uv:         Vector2;
+}
+
+JAMC_Line_Vetex :: struct {
+    position:   Vector3;
+    color:      Vector4;
 }
 
 #scope_file
@@ -93,20 +98,21 @@ init_rendering_objects :: () -> bool {
     ok, chunk_shader = create_shader_program(CUBE_INSTANCING_VERTEX_SHADER, CUBE_FRAGMENT_SHADER);
     if !ok then return false;
 
-    glGenVertexArrays(1, *line_vao);
-    glBindVertexArray(line_vao);
+    {
+        glGenVertexArrays(1, *line_vao);
+        glBindVertexArray(line_vao);
+        defer glBindVertexArray(0);
 
-    glGenBuffers(1, *line_vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, line_vbo);
-    glBufferData(GL_ARRAY_BUFFER, size_of(Vertex_Pos_Color) * 2, null, GL_DYNAMIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, size_of(Vertex_Pos_Color), cast(*void) 0);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, size_of(Vertex_Pos_Color), cast(*void) size_of(Vector3));
+        glGenBuffers(1, *line_vbo);
+        glBindBuffer(GL_ARRAY_BUFFER, line_vbo);
+        defer glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-    glBindVertexArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-
+        glBufferData(GL_ARRAY_BUFFER, size_of(JAMC_Line_Vetex) * 2, null, GL_DYNAMIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, size_of(JAMC_Line_Vetex), cast(*void) 0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, size_of(JAMC_Line_Vetex), cast(*void) size_of(Vector3));
+    }
     {
         glGenVertexArrays(1, *chunk_vao);
         glBindVertexArray(chunk_vao);
@@ -114,25 +120,29 @@ init_rendering_objects :: () -> bool {
 
         glGenBuffers(1, *block_vbo);
         glBindBuffer(GL_ARRAY_BUFFER, block_vbo);
-        glBufferData(GL_ARRAY_BUFFER, size_of(Vertex_Pos_Color) * 36, cube_vertices.data, GL_STATIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER, size_of(JAMC_Block_Vertex) * 36, cube_vertices.data, GL_STATIC_DRAW);
 
         glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, size_of(Vertex_Pos_Color), cast(*void) 0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, size_of(JAMC_Block_Vertex), cast(*void) 0);
         glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, size_of(Vertex_Pos_Color), cast(*void) size_of(Vector3));
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, size_of(JAMC_Block_Vertex), cast(*void) size_of(Vector3));
 
         glGenBuffers(1, *chunk_instance_vbo);
         glBindBuffer(GL_ARRAY_BUFFER, chunk_instance_vbo);
 
         MAX_INSTANCES :: BLOCK_PER_CHUNK;
-        glBufferData(GL_ARRAY_BUFFER, MAX_INSTANCES * size_of(Matrix4), null, GL_DYNAMIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER, MAX_INSTANCES * size_of(JAMC_Block), null, GL_DYNAMIC_DRAW);
 
         for i: 0..3 {
             loc := 2 + i;
             glEnableVertexAttribArray(xx loc);
-            glVertexAttribPointer(xx loc, 4, GL_FLOAT, GL_FALSE, size_of(Matrix4), cast(*void) (size_of(Vector4) * i));
+            glVertexAttribPointer(xx loc, 4, GL_FLOAT, GL_FALSE, size_of(JAMC_Block), cast(*void) (size_of(Vector4) * i));
             glVertexAttribDivisor(xx loc, 1);
         }
+
+        glEnableVertexAttribArray(6);
+        glVertexAttribPointer(6, 1, GL_FLOAT, GL_FALSE, size_of(JAMC_Block), cast(*void) size_of(Matrix4));
+        glVertexAttribDivisor(6, 1);
 
         glBindBuffer(GL_ARRAY_BUFFER, 0);
     }
@@ -146,7 +156,7 @@ draw_line :: inline (start : Vector3, end : Vector3, color : Vector4) {
 }
 
 draw_line :: (start : Vector3, end : Vector3, start_color : Vector4, end_color : Vector4) {
-    data : [2]Vertex_Pos_Color = ---;
+    data : [2]JAMC_Line_Vetex = ---;
     data[0].position = start;
     data[0].color    = start_color;
     data[1].position = end;
@@ -154,23 +164,34 @@ draw_line :: (start : Vector3, end : Vector3, start_color : Vector4, end_color :
 
     glBindVertexArray(line_vao);
     glBindBuffer(GL_ARRAY_BUFFER, line_vbo);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, size_of (Vertex_Pos_Color) * 2, data.data);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, size_of (JAMC_Line_Vetex) * 2, data.data);
     glUseProgram(line_shader);
     glUniformMatrix4fv(glGetUniformLocation(line_shader, "u_View_Projection_Matrix"), 1, GL_TRUE, *camera.view_projection_matrix.coef[0][0]);
     glDrawArrays(GL_LINES, 0, 2);
 }
 
-draw_chunk :: (model_matrices : []Matrix4) {
+draw_chunk :: (using chunk : *JAMC_Chunk) {
+    glBindVertexArray(chunk_vao);
     defer glBindVertexArray(0);
 
-    glBindVertexArray(chunk_vao);
     glBindBuffer(GL_ARRAY_BUFFER, chunk_instance_vbo);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, model_matrices.count * size_of(Matrix4), model_matrices.data);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, blocks.count * size_of(JAMC_Block), blocks.data);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
+
     glUseProgram(chunk_shader);
+    glActiveTexture(GL_TEXTURE0);
+    success, texture := table_find(*textures, BLOCK_TEXTURE_HANDLE);
+    if !success {
+        log_error("Error: retreive texture from table");
+        return;
+    }
+    glBindTexture(GL_TEXTURE_2D_ARRAY, texture.gl_handle);
+
     view_proj_loc := glGetUniformLocation(chunk_shader, "u_View_Projection_Matrix");
+    tex\     _loc := glGetUniformLocation(chunk_shader, "u_Block_Textures");
     glUniformMatrix4fv(view_proj_loc, 1, GL_TRUE, *camera.view_projection_matrix.coef[0][0]);
-    glDrawArraysInstanced(GL_TRIANGLES, 0, 36, xx model_matrices.count);
+    glUniform1i(tex_loc, 0);
+    glDrawArraysInstanced(GL_TRIANGLES, 0, 36, xx blocks.count);
 }
 
 SHADER_PREFIX :: #string END
@@ -205,31 +226,36 @@ GLSL
 
 CUBE_INSTANCING_VERTEX_SHADER :: #string GLSL
 
-layout (location = 0) in vec3 a_Position;
-layout (location = 1) in vec4 a_Color;
-layout (location = 2) in mat4 a_Model_Matrix;
+layout (location = 0) in vec3  a_Position;
+layout (location = 1) in vec2  a_UV;
+layout (location = 2) in mat4  a_Model_Matrix;
+layout (location = 6) in float a_TexID;
 
 uniform mat4 u_View_Projection_Matrix;
 
-out vec4 Color;
+out vec2  v_UV;
+out float v_TexID;
 
 void main () {
+    v_UV    = a_UV;
+    v_TexID = a_TexID;
     gl_Position = u_View_Projection_Matrix * a_Model_Matrix * vec4(a_Position, 1);
-    float height_factor = clamp(a_Position.y + 0.5, 0.0, 1);
-    vec3 bottom_color = a_Color.rgb * 0.5;
-    vec3 top_color    = a_Color.rgb;
-    vec3 color = mix(bottom_color, top_color, height_factor);
-    Color = vec4(color, a_Color.a);
 }
 GLSL
 
 CUBE_FRAGMENT_SHADER :: #string GLSL
 
-in vec4 Color;
+in vec2  v_UV;
+in float v_TexID;
 
 out vec4 Frag_Color;
 
+uniform sampler2DArray u_Block_Textures;
+
 void main () {
-    Frag_Color = Color;
+    vec4 Tex_Color = texture(u_Block_Textures, vec3(v_UV, v_TexID));
+    if (Tex_Color.a < 0.1) discard;
+
+    Frag_Color = Tex_Color;
 }
 GLSL
