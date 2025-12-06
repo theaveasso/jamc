@@ -130,7 +130,7 @@ init_rendering_objects :: () -> bool {
         glGenBuffers(1, *chunk_instance_vbo);
         glBindBuffer(GL_ARRAY_BUFFER, chunk_instance_vbo);
 
-        MAX_INSTANCES :: BLOCK_PER_CHUNK;
+        MAX_INSTANCES :: TOTAL_CHUNKS;
         glBufferData(GL_ARRAY_BUFFER, MAX_INSTANCES * size_of(JAMC_Block), null, GL_DYNAMIC_DRAW);
 
         for i: 0..3 {

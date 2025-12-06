@@ -19,6 +19,8 @@ Texture :: Simp.Texture;
 #load "world.jai";
 #load "texture.jai";
 
+#import,dir "../modules/fastnoise";
+
 ASPECT :: (16.0 / 9.0);
 VPIXELS :: 360;
 
@@ -70,6 +72,9 @@ Game_State :: struct {
    playfield_\width : s32;
    playfield_height : s32;
 
+   noise            : Noise_Gen;
+   world            : [TOTAL_CHUNKS]JAMC_Chunk;
+
    player_handle    : Entity_Handle;
 
    using _camera    : Game_Camera;
@@ -111,23 +116,16 @@ main :: () {
     init_camera();
     init_entities();
 
-    test_chunk : JAMC_Chunk = ---;
-	block_size := make_scale_matrix4(xyz(0.5));
-	current_index := 0;
-	for y: 0..CHUNK_SIZE_Y - 1 {
-	    for z: 0..CHUNK_SIZE_Z - 1 {
-			for x: 0..CHUNK_SIZE_X - 1 {
-			    using test_chunk;
-				type: JAMC_Block_Type;
-
-			    position := Vector3.{xx x, xx y, xx z};
-				model := make_translation_matrix4(position) * block_size;
-				blocks[current_index].model = transpose(model);
-				blocks[current_index].texture_id = material_ids[JAMC_Block_Type.SNOW];
-				current_index += 1;
-			}
-		}
-	}
+    init_noise_generator(*noise);
+    for cx : 0..WORLD_SIZE - 1 {
+        for cz : 0..WORLD_SIZE - 1 {
+            index := cx + (cz * WORLD_SIZE);
+            chunk := *world[index];
+            chunk.x = xx cx;
+            chunk.y = xx cz;
+            init_chunk(chunk, *noise, xx cx, xx cz);
+        }
+    }
     init_rendering_objects();
 
     glEnable(GL_BLEND);
@@ -162,7 +160,7 @@ main :: () {
 		draw_line(.{}, .{y=1}, .{y=1, w=1});
 		draw_line(.{}, .{z=1}, .{z=1, w=1});
 
-		draw_chunk(*test_chunk);
+		for *world draw_chunk(it);
 
         Simp.clear_scissor();
         Simp.swap_buffers(window);
