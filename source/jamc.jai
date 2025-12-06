@@ -3,6 +3,7 @@
 #import "Input";
 #import "System";
 #import "File_Utilities";
+#import "Random";
 #import "String";
 #import "Sort";
 #import "Hash_Table";
@@ -117,10 +118,12 @@ main :: () {
 	    for z: 0..CHUNK_SIZE_Z - 1 {
 			for x: 0..CHUNK_SIZE_X - 1 {
 			    using test_chunk;
+				type: JAMC_Block_Type;
+
 			    position := Vector3.{xx x, xx y, xx z};
 				model := make_translation_matrix4(position) * block_size;
 				blocks[current_index].model = transpose(model);
-				blocks[current_index].texture_id = 0.;
+				blocks[current_index].texture_id = material_ids[JAMC_Block_Type.SNOW];
 				current_index += 1;
 			}
 		}

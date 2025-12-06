@@ -8,19 +8,22 @@ Texture_Load_Context :: struct {
 
 BLOCK_TEXTURE_HANDLE :: "block_textures";
 
+material_ids : [#run enum_highest_value(JAMC_Block_Type) + 1] float;
+
 init_textures :: () {
     find_and_load_block_textures();
 }
 
-
 find_and_load_block_textures :: inline () {
 	collector :: (info : *File_Visit_Info, data : *void) {
-	    _, _, ext := path_decomp(info.full_name);
+	    _, basename, ext := path_decomp(info.full_name);
 	    ctx := cast(*Texture_Load_Context)data;
 
 		if info.is_directory return;
-
 		if ext != "png" return;
+
+		if ends_with(basename, "_n") return;
+		if ends_with(basename, "_s") return;
 
 		array_add(*ctx.files, copy_string(info.full_name));
 	}
@@ -36,6 +39,7 @@ find_and_load_block_textures :: inline () {
 
 	print("Found % textures. Loading array...\n", load_ctx.files.count);
 	for load_ctx.files print("  [%] %\n", it_index, it);
+	for *id : material_ids id.* = -1.0;
 
 	first_bitmap : Simp.Bitmap;
 	if !Simp.bitmap_load(*first_bitmap, load_ctx.files[0]) return;
@@ -66,21 +70,37 @@ find_and_load_block_textures :: inline () {
 	format := get_gl_format(first_bitmap.format);
 	glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, 0, xx w, xx h, 1, format, GL_UNSIGNED_BYTE, first_bitmap.data.data);
 
-	for index: 1..load_ctx.files.count - 1 {
+	for load_ctx.files {
 	    using bitmap : Simp.Bitmap;
-		file_path := load_ctx.files[index];
-		if !Simp.bitmap_load(*bitmap, file_path) {
-		    log_error("Error: loading %", file_path);
+		if !Simp.bitmap_load(*bitmap, it) {
+		    log_error("Error: loading %", it);
 		    continue;
 		}
 		defer Simp.deinit(*bitmap);
 
 		if width != w || height != h {
-            log_error("Error: skipping % (wrong size: %x% expected %x%)", file_path, width, height, w, h);
+            log_error("Error: skipping % (wrong size: %x% expected %x%)", it, width, height, w, h);
 		    continue;
 		}
 
-		glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, xx index, xx w, xx h, 1, get_gl_format(bitmap.format), GL_UNSIGNED_BYTE, data.data);
+		glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, xx it_index, xx w, xx h, 1, get_gl_format(bitmap.format), GL_UNSIGNED_BYTE, data.data);
+
+		full_name := path_filename(it);
+		base_name := path_strip_extension(full_name);
+		info := type_info(JAMC_Block_Type);
+
+		found_enum := false;
+		enum_value : s64;
+
+		for name, i : info.names {
+		    if equal_nocase(name, base_name) {
+				enum_value = info.values[i];
+				found_enum = true;
+				break;
+			}
+		}
+
+		if found_enum material_ids[enum_value] = xx it_index;
 	}
 
 	table_add(*textures, copy_string(BLOCK_TEXTURE_HANDLE), block_texture_array);

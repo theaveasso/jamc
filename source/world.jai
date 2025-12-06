@@ -1,6 +1,6 @@
-CHUNK_SIZE_X :: 6;
+CHUNK_SIZE_X :: 16;
 CHUNK_SIZE_Y :: 1;
-CHUNK_SIZE_Z :: 6;
+CHUNK_SIZE_Z :: 16;
 
 BLOCK_PER_CHUNK :: CHUNK_SIZE_X * CHUNK_SIZE_Y * CHUNK_SIZE_Z;
 
@@ -8,6 +8,8 @@ JAMC_Block_Type :: enum u8 {
     AIR;
     DIRT;
     GRASS;
+    SAND;
+    SNOW;
     STONE;
 }
 
