@@ -1,8 +1,8 @@
-CHUNK_SIZE_X :: 1;
-CHUNK_SIZE_Y :: 1;
-CHUNK_SIZE_Z :: 1;
+CHUNK_SIZE_X :: 5;
+CHUNK_SIZE_Y :: 5;
+CHUNK_SIZE_Z :: 5;
 
-CHUNK_SIZE   :: CHUNK_SIZE_X * CHUNK_SIZE_Y * CHUNK_SIZE_Z;
+BLOCK_PER_CHUNK :: CHUNK_SIZE_X * CHUNK_SIZE_Y * CHUNK_SIZE_Z;
 
 JAMC_Block_Type :: enum u8 {
     AIR;
@@ -16,7 +16,7 @@ JAMC_Block :: struct {
 }
 
 JAMC_Chunk :: struct {
-    blocks : [CHUNK_SIZE]JAMC_Block;
+    blocks : [BLOCK_PER_CHUNK]JAMC_Block;
 }
 
 cube_vertices : [36]Vertex_Pos_Color : .[

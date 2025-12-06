@@ -107,18 +107,26 @@ main :: () {
     init_camera();
     init_entities();
 
-    model_matrices : [CHUNK_SIZE]Matrix4 = ---;
-	block_size := make_scale_matrix4(xyz(3));
-	for *model, index : model_matrices {
-		x := index % CHUNK_SIZE_X;
-		z := (index / CHUNK_SIZE_X) % CHUNK_SIZE_Y;
-		y := index / (CHUNK_SIZE_X * CHUNK_SIZE_Y);
-		model.* = make_translation_matrix4(.{0, 0, 0}) * block_size;
+    model_matrices : [BLOCK_PER_CHUNK]Matrix4 = ---;
+	block_size := make_scale_matrix4(xyz(0.5));
+	current_index := 0;
+	for y: 0..CHUNK_SIZE_Y - 1 {
+	    for z: 0..CHUNK_SIZE_Z - 1 {
+			for x: 0..CHUNK_SIZE_X - 1 {
+			    position := Vector3.{xx x, xx y, xx z};
+				model := make_translation_matrix4(position) * block_size;
+				model_matrices[current_index] = transpose(model);
+				current_index += 1;
+			}
+		}
 	}
+	// for *model, index : model_matrices {
+	// 	x := index % CHUNK_SIZE_X;
+	// 	z := (index / CHUNK_SIZE_X) % CHUNK_SIZE_Y;
+	// 	y := index / (CHUNK_SIZE_X * CHUNK_SIZE_Y);
+	// 	model.* = make_translation_matrix4(xyz(.[xx x, xx y, xx z])) * block_size;
+	// }
     init_rendering_objects();
-
-    glBindBuffer(GL_ARRAY_BUFFER, chunk_vbo);
-    glBufferData(GL_ARRAY_BUFFER, 0, size_of(Vertex_Pos_Color) * 36, cube_vertices.data);
 
     glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);

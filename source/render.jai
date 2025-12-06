@@ -1,6 +1,6 @@
 line_shader, line_vao, line_vbo : GLuint;
-cube_shader, cube_vao, cube_vbo : GLuint;
-chunk_shader, chunk_vao, chunk_vbo, chunk_instance_vbo : GLuint;
+block_vbo : GLuint;
+chunk_shader, chunk_vao, chunk_instance_vbo : GLuint;
 
 Vertex_Pos_Color :: struct {
     position:  Vector3;
@@ -90,7 +90,6 @@ create_shader_program :: (vertex_source : string, fragment_source : string) -> b
 init_rendering_objects :: () -> bool {
     ok : bool;
     ok, line_shader  = create_shader_program(LINE_VERTEX_SHADER, LINE_FRAGMENT_SHADER);
-    ok, cube_shader  = create_shader_program(CUBE_VERTEX_SHADER, CUBE_FRAGMENT_SHADER);
     ok, chunk_shader = create_shader_program(CUBE_INSTANCING_VERTEX_SHADER, CUBE_FRAGMENT_SHADER);
     if !ok then return false;
 
@@ -108,46 +107,35 @@ init_rendering_objects :: () -> bool {
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-    glGenVertexArrays(1, *cube_vao);
-    glBindVertexArray(cube_vao);
+    {
+        glGenVertexArrays(1, *chunk_vao);
+        glBindVertexArray(chunk_vao);
+        defer glBindVertexArray(0);
 
-    glGenBuffers(1, *cube_vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, cube_vbo);
-    glBufferData(GL_ARRAY_BUFFER, size_of(Vertex_Pos_Color) * 36, null, GL_DYNAMIC_DRAW);
+        glGenBuffers(1, *block_vbo);
+        glBindBuffer(GL_ARRAY_BUFFER, block_vbo);
+        glBufferData(GL_ARRAY_BUFFER, size_of(Vertex_Pos_Color) * 36, cube_vertices.data, GL_STATIC_DRAW);
 
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, size_of(Vertex_Pos_Color), cast(*void) 0);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, size_of(Vertex_Pos_Color), cast(*void) size_of(Vector3));
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, size_of(Vertex_Pos_Color), cast(*void) 0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, size_of(Vertex_Pos_Color), cast(*void) size_of(Vector3));
 
-    glBindVertexArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+        glGenBuffers(1, *chunk_instance_vbo);
+        glBindBuffer(GL_ARRAY_BUFFER, chunk_instance_vbo);
 
-    glGenVertexArrays(1, *chunk_vao);
-    glBindVertexArray(chunk_vao);
+        MAX_INSTANCES :: BLOCK_PER_CHUNK;
+        glBufferData(GL_ARRAY_BUFFER, MAX_INSTANCES * size_of(Matrix4), null, GL_DYNAMIC_DRAW);
 
-    glGenBuffers(1, *chunk_vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, chunk_vbo);
-    glBufferData(GL_ARRAY_BUFFER, size_of(Vertex_Pos_Color) * 36, null, GL_DYNAMIC_DRAW);
+        for i: 0..3 {
+            loc := 2 + i;
+            glEnableVertexAttribArray(xx loc);
+            glVertexAttribPointer(xx loc, 4, GL_FLOAT, GL_FALSE, size_of(Matrix4), cast(*void) (size_of(Vector4) * i));
+            glVertexAttribDivisor(xx loc, 1);
+        }
 
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, size_of(Vertex_Pos_Color), cast(*void) 0);
-
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, size_of(Vertex_Pos_Color), cast(*void) size_of(Vector3));
-
-    glGenBuffers(1, *chunk_instance_vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, chunk_instance_vbo);
-    glBufferData(GL_ARRAY_BUFFER, 0, null, GL_DYNAMIC_DRAW);
-
-    for i: 0..3 {
-        glEnableVertexAttribArray(xx (2 + i));
-        glVertexAttribPointer(xx (2 + i), 4, GL_FLOAT, GL_FALSE, size_of(Matrix4), cast(*void)(size_of(Vector4) * i));
-        glEnableVertexAttribArray(xx (2 + i));
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
     }
-
-    glBindVertexArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
 
     event_enqueue(.{debug_message = "Rendering Objects initialized!"});
     return true;
@@ -173,24 +161,16 @@ draw_line :: (start : Vector3, end : Vector3, start_color : Vector4, end_color :
 }
 
 draw_chunk :: (model_matrices : []Matrix4) {
+    defer glBindVertexArray(0);
+
+    glBindVertexArray(chunk_vao);
     glBindBuffer(GL_ARRAY_BUFFER, chunk_instance_vbo);
     glBufferSubData(GL_ARRAY_BUFFER, 0, model_matrices.count * size_of(Matrix4), model_matrices.data);
-
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
     glUseProgram(chunk_shader);
-    glBindVertexArray(chunk_vao);
-    glUniformMatrix4fv(glGetUniformLocation(chunk_shader, "u_View_Projection_Matrix"), 1, GL_FALSE, *camera.view_projection_matrix.coef[0][0]);
+    view_proj_loc := glGetUniformLocation(chunk_shader, "u_View_Projection_Matrix");
+    glUniformMatrix4fv(view_proj_loc, 1, GL_TRUE, *camera.view_projection_matrix.coef[0][0]);
     glDrawArraysInstanced(GL_TRIANGLES, 0, 36, xx model_matrices.count);
-
-    glBindVertexArray(0);
-}
-
-draw_cube :: () {
-    glBindVertexArray(cube_vao);
-    glBindBuffer(GL_ARRAY_BUFFER, cube_vbo);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, size_of(Vertex_Pos_Color) * 36, cube_vertices.data);
-    glUseProgram(cube_shader);
-    glUniformMatrix4fv(glGetUniformLocation(cube_shader, "u_View_Projection_Matrix"), 1, GL_TRUE, *camera.view_projection_matrix.coef[0][0]);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
 }
 
 SHADER_PREFIX :: #string END
@@ -223,21 +203,6 @@ void main () {
 }
 GLSL
 
-CUBE_VERTEX_SHADER :: #string GLSL
-
-layout (location = 0) in vec3 a_Position;
-layout (location = 1) in vec4 a_Color;
-
-uniform mat4 u_View_Projection_Matrix;
-
-out vec4 Color;
-
-void main () {
-    gl_Position = u_View_Projection_Matrix * vec4 (a_Position, 1);
-    Color = a_Color;
-}
-GLSL
-
 CUBE_INSTANCING_VERTEX_SHADER :: #string GLSL
 
 layout (location = 0) in vec3 a_Position;
@@ -250,7 +215,11 @@ out vec4 Color;
 
 void main () {
     gl_Position = u_View_Projection_Matrix * a_Model_Matrix * vec4(a_Position, 1);
-    Color = a_Color;
+    float height_factor = clamp(a_Position.y + 0.5, 0.0, 1);
+    vec3 bottom_color = a_Color.rgb * 0.5;
+    vec3 top_color    = a_Color.rgb;
+    vec3 color = mix(bottom_color, top_color, height_factor);
+    Color = vec4(color, a_Color.a);
 }
 GLSL
 

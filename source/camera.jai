@@ -17,9 +17,9 @@ Camera :: struct {
 }
 
 init_camera :: () {
-    camera.position = xyz(1, 1.3, 2.3);
+    camera.position = xyz(8., 6., 8.);
     camera.euler_angles.x = -20 * PI / 180.0;
-    camera.euler_angles.y =  10 * PI / 180.0;
+    camera.euler_angles.y =  45 * PI / 180.0;
 }
 
 camera_update :: (delta_time: float) {
