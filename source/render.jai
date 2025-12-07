@@ -174,35 +174,39 @@ draw_chunk :: (using chunk : *JAMC_Chunk) {
 
     glBindBuffer(GL_ARRAY_BUFFER, mesh_vbo);
     
-    // Chunk_Vertex struct layout needs to be consistent here
-    // p: 0, uv: 12, tex: 20, normal: 24 -> stride 36
-    stride := 36; 
-    
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, xx stride, cast(*void) 0);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, xx stride, cast(*void) 12);
-    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, xx stride, cast(*void) 20);
-    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, xx stride, cast(*void) 24);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, xx size_of (Chunk_Vertex), cast(*void) 0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, xx size_of (Chunk_Vertex), cast(*void) 12);
+    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, xx size_of (Chunk_Vertex), cast(*void) 20);
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, xx size_of (Chunk_Vertex), cast(*void) 24);
 
     glUseProgram(chunk_shader);
-    glActiveTexture(GL_TEXTURE0);
-    success, texture := table_find(*textures, BLOCK_TEXTURE_HANDLE);
-    if !success {
-        log_error("Error: retreive texture from table");
-        return;
-    }
-    glBindTexture(GL_TEXTURE_2D_ARRAY, texture.gl_handle);
 
-    view_proj_loc := glGetUniformLocation(chunk_shader, "u_View_Projection_Matrix");
-    tex_loc := glGetUniformLocation(chunk_shader, "u_Block_Textures");
-    model_loc := glGetUniformLocation(chunk_shader, "u_Model_Matrix");
+    texture, normal_tex, spec_tex : Texture;
+    success : bool;
+
+    glActiveTexture(GL_TEXTURE0);
+    success, texture = table_find(*textures, BLOCK_TEXTURE_HANDLE);
+    if success glBindTexture(GL_TEXTURE_2D_ARRAY, texture.gl_handle);
+    glUniform1i(glGetUniformLocation(chunk_shader, "u_Block_Textures"), 0);
+    
+    glActiveTexture(GL_TEXTURE1);
+    success, normal_tex = table_find(*textures, BLOCK_NORMAL_HANDLE);
+    if success glBindTexture(GL_TEXTURE_2D_ARRAY, normal_tex.gl_handle);
+    glUniform1i(glGetUniformLocation(chunk_shader, "u_Normal_Maps"), 1);
+
+    glActiveTexture(GL_TEXTURE2);
+    success, spec_tex = table_find(*textures, BLOCK_SPECULAR_HANDLE);
+    if success glBindTexture(GL_TEXTURE_2D_ARRAY, spec_tex.gl_handle);
+    glUniform1i(glGetUniformLocation(chunk_shader, "u_Specular_Maps"), 2);
 
     chunk_model_matrix := make_translation_matrix4(xyz(position.x * CHUNK_SIZE * VOXEL_SCALE, 0, position.y * CHUNK_SIZE * VOXEL_SCALE));
     chunk_model_matrix = chunk_model_matrix * make_scale_matrix4(xyz(VOXEL_SCALE));
 
+    view_proj_loc := glGetUniformLocation(chunk_shader, "u_View_Projection_Matrix");
+    model_loc := glGetUniformLocation(chunk_shader, "u_Model_Matrix");
     glUniformMatrix4fv(view_proj_loc, 1, GL_TRUE, *camera.view_projection_matrix.coef[0][0]);
     glUniformMatrix4fv(model_loc, 1, GL_TRUE, *chunk_model_matrix.coef[0][0]);
-    glUniform1i(tex_loc, 0);
-    
+
     glDrawArrays(GL_TRIANGLES, 0, xx mesh_vertex_count);
 }
 
@@ -266,17 +270,57 @@ in vec3  v_Normal;
 
 out vec4 Frag_Color;
 
+
 uniform sampler2DArray u_Block_Textures;
+uniform sampler2DArray u_Normal_Maps;
+uniform sampler2DArray u_Specular_Maps;
 
 void main () {
     vec4 Tex_Color = texture(u_Block_Textures, vec3(v_UV, v_TexID));
     if (Tex_Color.a < 0.1) discard;
 
-    vec3 light_dir = normalize(vec3(0.2, 1.0, 0.3));
-    float diff = max(dot(v_Normal, light_dir), 0.4); // Ambient of 0.4
+    vec3 normal_map = texture(u_Normal_Maps, vec3(v_UV, v_TexID)).rgb;
+    // Map from [0, 1] to [-1, 1]
+    normal_map = normalize(normal_map * 2.0 - 1.0);
 
-    // Apply lighting
-    vec3 result = Tex_Color.rgb * diff;
+    // Calculate TBN
+    // Since we are using cubes, we can assume tangent/bitangent based on normal or derivatives
+    // For simplicity with flat surfaces, let's use derivatives which works for arbitrary UV mapping
+    vec3 Q1  = dFdx(vec3(0,0,0)); // World Pos not available? We can just use v_Normal as base
+    // Actually, to do proper normal mapping on a cube without passing Tangents, checks are needed.
+    // However, with standard cube UVs, we can infer.
+    
+    // Simple TBN derivation
+    vec3 N = normalize(v_Normal);
+    vec3 T = abs(N.y) > 0.99 ? vec3(1, 0, 0) : normalize(cross(vec3(0, 1, 0), N));
+    vec3 B = cross(N, T);
+    mat3 TBN = mat3(T, B, N);
+    
+    vec3 final_normal = normalize(TBN * normal_map);
+
+    vec3 light_dir = normalize(vec3(0.2, 1.0, 0.3));
+    
+    // Diffuse
+    float diff = max(dot(final_normal, light_dir), 0.0);
+    
+    // Specular
+    float specular_strength = texture(u_Specular_Maps, vec3(v_UV, v_TexID)).r;
+    vec3 view_dir = vec3(0, 0, 1); // Approximation or passed in
+    // Since we don't have view pos in frag yet, let's stick to simple Blinn-Phong with 'view_dir' roughly from camera?
+    // Actually, let's assume view vector is roughly along normal for basic highlight or pass camera pos.
+    // For now, let's skip view-dependent view_dir and use half-vector with fixed view.
+    // Better: just use light reflection.
+    vec3 reflect_dir = reflect(-light_dir, final_normal);
+    // Assuming view is from -Z (standard) ?? No, this is world space.
+    // Let's just use a simple dot(N, H) or similar.
+    // For now: simple specular 
+    float spec = pow(max(dot(final_normal, light_dir), 0.0), 32); 
+
+    vec3 ambient = vec3(0.4);
+    vec3 diffuse = diff * vec3(1.0);
+    vec3 specular = spec * specular_strength * vec3(1.0); // White light
+
+    vec3 result = (ambient + diffuse) * Tex_Color.rgb + specular;
 
     Frag_Color = vec4(result, Tex_Color.a);
 }

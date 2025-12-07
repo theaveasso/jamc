@@ -6,7 +6,9 @@ Texture_Load_Context :: struct {
 
 #scope_export
 
-BLOCK_TEXTURE_HANDLE :: "block_textures";
+BLOCK_TEXTURE_HANDLE  :: "block_textures";
+BLOCK_NORMAL_HANDLE   :: "block_normal_maps";
+BLOCK_SPECULAR_HANDLE :: "block_specular_maps";
 
 material_ids : [#run enum_highest_value(JAMC_Block_Type) + 1] float;
 
@@ -49,17 +51,36 @@ find_and_load_block_textures :: inline () {
 	h := first_bitmap.height;
 
 	block_texture_array : Texture;
+    normal_texture_array : Texture;
+    specular_texture_array : Texture;
+
 	layer_count := cast(u32) load_ctx.files.count;
 
 	glGenTextures(1, *block_texture_array.gl_handle);
 	glBindTexture(GL_TEXTURE_2D_ARRAY, block_texture_array.gl_handle);
-	defer glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
 	glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, xx w, xx h, xx layer_count, 0, GL_RGBA, GL_UNSIGNED_BYTE, null);
-
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+    glGenTextures(1, *normal_texture_array.gl_handle);
+	glBindTexture(GL_TEXTURE_2D_ARRAY, normal_texture_array.gl_handle);
+	glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, xx w, xx h, xx layer_count, 0, GL_RGBA, GL_UNSIGNED_BYTE, null);
+	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+    glGenTextures(1, *specular_texture_array.gl_handle);
+	glBindTexture(GL_TEXTURE_2D_ARRAY, specular_texture_array.gl_handle);
+	glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, xx w, xx h, xx layer_count, 0, GL_RGBA, GL_UNSIGNED_BYTE, null);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
 
 	get_gl_format :: (format: Simp.Texture_Format) -> GLenum {
 	    if format == .RGBA8 return GL_RGBA;
@@ -67,10 +88,27 @@ find_and_load_block_textures :: inline () {
 	    return GL_RGBA;
 	}
 
-	format := get_gl_format(first_bitmap.format);
-	glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, 0, xx w, xx h, 1, format, GL_UNSIGNED_BYTE, first_bitmap.data.data);
+    // Default textures
+    default_normal_data := alloc(w * h * 4,, temp);
+    default_specular_data := alloc(w * h * 4,, temp);
+    
+    // Fill defaults (Flat blue normal 128, 128, 255, Black specular 0)
+    dn_ptr := cast(*u8) default_normal_data;
+    ds_ptr := cast(*u8) default_specular_data;
+    for 0..(w * h) - 1 {
+        dn_ptr[it * 4 + 0] = 128;
+        dn_ptr[it * 4 + 1] = 128;
+        dn_ptr[it * 4 + 2] = 255;
+        dn_ptr[it * 4 + 3] = 255;
+
+        ds_ptr[it * 4 + 0] = 0;
+        ds_ptr[it * 4 + 1] = 0;
+        ds_ptr[it * 4 + 2] = 0;
+        ds_ptr[it * 4 + 3] = 255; // Specular alpha usually unused or glossiness
+    }
 
 	for load_ctx.files {
+        // Load Diffuse
 	    using bitmap : Simp.Bitmap;
 		if !Simp.bitmap_load(*bitmap, it) {
 		    log_error("Error: loading %", it);
@@ -83,7 +121,43 @@ find_and_load_block_textures :: inline () {
 		    continue;
 		}
 
+        glBindTexture(GL_TEXTURE_2D_ARRAY, block_texture_array.gl_handle);
 		glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, xx it_index, xx w, xx h, 1, get_gl_format(bitmap.format), GL_UNSIGNED_BYTE, data.data);
+
+        // Try load Normal
+        {
+             path_no_ext := path_strip_extension(it);
+             normal_path := sprint("%_n.png", path_no_ext);
+             
+             normal_bmp : Simp.Bitmap;
+             has_normal := Simp.bitmap_load(*normal_bmp, normal_path);
+             defer if has_normal Simp.deinit(*normal_bmp);
+
+             glBindTexture(GL_TEXTURE_2D_ARRAY, normal_texture_array.gl_handle);
+             if has_normal {
+                 glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, xx it_index, xx w, xx h, 1, get_gl_format(normal_bmp.format), GL_UNSIGNED_BYTE, normal_bmp.data.data);
+             } else {
+                 glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, xx it_index, xx w, xx h, 1, GL_RGBA, GL_UNSIGNED_BYTE, default_normal_data);
+             }
+        }
+
+        // Try load Specular
+        {
+             path_no_ext := path_strip_extension(it);
+             spec_path := sprint("%_s.png", path_no_ext);
+             
+             spec_bmp : Simp.Bitmap;
+             has_spec := Simp.bitmap_load(*spec_bmp, spec_path);
+             defer if has_spec Simp.deinit(*spec_bmp);
+
+             glBindTexture(GL_TEXTURE_2D_ARRAY, specular_texture_array.gl_handle);
+             if has_spec {
+                 glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, xx it_index, xx w, xx h, 1, get_gl_format(spec_bmp.format), GL_UNSIGNED_BYTE, spec_bmp.data.data);
+             } else {
+                 glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, xx it_index, xx w, xx h, 1, GL_RGBA, GL_UNSIGNED_BYTE, default_specular_data);
+             }
+        }
+
 
 		full_name := path_filename(it);
 		base_name := path_strip_extension(full_name);
@@ -104,5 +178,7 @@ find_and_load_block_textures :: inline () {
 	}
 
 	table_add(*textures, copy_string(BLOCK_TEXTURE_HANDLE), block_texture_array);
-	event_enqueue(.{debug_message = "All Block textures initialized!"});
+    table_add(*textures, copy_string(BLOCK_NORMAL_HANDLE), normal_texture_array);
+    table_add(*textures, copy_string(BLOCK_SPECULAR_HANDLE), specular_texture_array);
+	event_enqueue(.{debug_message = "All Block textures (Diffuse, Normal, Specular) initialized!"});
 }
