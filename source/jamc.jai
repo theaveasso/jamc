@@ -27,7 +27,8 @@ VPIXELS :: 360;
 TARGET_FPS :: 60;
 TARGET_DT  :: 1.0 / TARGET_FPS;
 
-RENDER_DISTANCE :: 4;
+RENDER_DISTANCE :: 16;
+CHUNKS_PER_FRAME :: 2;
 
 Game_Camera :: struct {
     using camera    : Camera;
@@ -256,8 +257,14 @@ update_world_generation :: () {
     px := gs.camera.position.x;
     pz := gs.camera.position.z;
 
-    player_chunk_x := cast(s32) floor(px / CHUNK_SIZE);
-    player_chunk_z := cast(s32) floor(pz / CHUNK_SIZE);
+    // chunk_world_size := CHUNK_SIZE * VOXEL_SCALE
+    // But we can just do the math inline or define it. VOXEL_SCALE is float, CHUNK_SIZE is int.
+    chunk_world_size := cast(float)CHUNK_SIZE * VOXEL_SCALE;
+
+    player_chunk_x := cast(s32) floor(px / chunk_world_size);
+    player_chunk_z := cast(s32) floor(pz / chunk_world_size);
+
+    chunks_generated := 0;
 
     // Simple radius check
     // Optimization: Spiral out or smarter queue, but simple double loop for now
@@ -265,6 +272,9 @@ update_world_generation :: () {
         for z : player_chunk_z - RENDER_DISTANCE .. player_chunk_z + RENDER_DISTANCE {
             key := get_chunk_key(x, z);
             if !table_contains(*world, key) {
+                // Return if we have exceeded our budget for this frame
+                if chunks_generated >= CHUNKS_PER_FRAME return;
+
                 // Generate new chunk
                 chunk := New(JAMC_Chunk);
                 chunk.position.x = xx x;
@@ -282,6 +292,8 @@ update_world_generation :: () {
                 update_neighbor_mesh(x + 1, z);
                 update_neighbor_mesh(x, z - 1);
                 update_neighbor_mesh(x, z + 1);
+
+                chunks_generated += 1;
             }
         }
     }
