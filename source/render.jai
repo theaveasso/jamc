@@ -140,6 +140,7 @@ init_rendering_objects :: () -> bool {
         glEnableVertexAttribArray(0); // Pos
         glEnableVertexAttribArray(1); // UV
         glEnableVertexAttribArray(2); // TexID
+        glEnableVertexAttribArray(3); // Normal
     }
 
     event_enqueue(.{debug_message = "Rendering Objects initialized!"});
@@ -174,12 +175,13 @@ draw_chunk :: (using chunk : *JAMC_Chunk) {
     glBindBuffer(GL_ARRAY_BUFFER, mesh_vbo);
     
     // Chunk_Vertex struct layout needs to be consistent here
-    // p: 0, uv: 12, tex: 20 -> stride 24
-    stride := 24; // 3*4 + 2*4 + 1*4
+    // p: 0, uv: 12, tex: 20, normal: 24 -> stride 36
+    stride := 36; 
     
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, xx stride, cast(*void) 0);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, xx stride, cast(*void) 12);
     glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, xx stride, cast(*void) 20);
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, xx stride, cast(*void) 24);
 
     glUseProgram(chunk_shader);
     glActiveTexture(GL_TEXTURE0);
@@ -239,16 +241,19 @@ CHUNK_VERTEX_SHADER :: #string GLSL
 layout (location = 0) in vec3  a_Position;
 layout (location = 1) in vec2  a_UV;
 layout (location = 2) in float a_TexID;
+layout (location = 3) in vec3  a_Normal;
 
 uniform mat4 u_View_Projection_Matrix;
 uniform mat4 u_Model_Matrix;
 
 out vec2  v_UV;
 out float v_TexID;
+out vec3  v_Normal;
 
 void main () {
     v_UV    = a_UV;
     v_TexID = a_TexID;
+    v_Normal = a_Normal;
     gl_Position = u_View_Projection_Matrix * u_Model_Matrix * vec4(a_Position, 1);
 }
 GLSL
@@ -257,6 +262,7 @@ CHUNK_FRAGMENT_SHADER :: #string GLSL
 
 in vec2  v_UV;
 in float v_TexID;
+in vec3  v_Normal;
 
 out vec4 Frag_Color;
 
@@ -266,6 +272,12 @@ void main () {
     vec4 Tex_Color = texture(u_Block_Textures, vec3(v_UV, v_TexID));
     if (Tex_Color.a < 0.1) discard;
 
-    Frag_Color = Tex_Color;
+    vec3 light_dir = normalize(vec3(0.2, 1.0, 0.3));
+    float diff = max(dot(v_Normal, light_dir), 0.4); // Ambient of 0.4
+
+    // Apply lighting
+    vec3 result = Tex_Color.rgb * diff;
+
+    Frag_Color = vec4(result, Tex_Color.a);
 }
 GLSL

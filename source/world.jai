@@ -147,6 +147,7 @@ Chunk_Vertex :: struct {
     p : Vector3;
     uv : Vector2;
     tex_id : float;
+    normal : Vector3;
 }
 
 get_chunk_key :: inline (x: s32, z: s32) -> s64 {
@@ -222,7 +223,7 @@ update_chunk_mesh :: (using chunk: *JAMC_Chunk, all_chunks: *Table(s64, *JAMC_Ch
                     for i: 0..5 {
                         v := cube_vertices[i];
                         p := (v.position * 0.5) + pos;
-                        array_add(*vertices, .{p, v.uv, tex_id});
+                        array_add(*vertices, .{p, v.uv, tex_id, .{0, 1, 0}});
                     }
                 }
                 // Bottom (Y-)
@@ -230,7 +231,7 @@ update_chunk_mesh :: (using chunk: *JAMC_Chunk, all_chunks: *Table(s64, *JAMC_Ch
                     for i: 6..11 {
                         v := cube_vertices[i];
                         p := (v.position * 0.5) + pos;
-                        array_add(*vertices, .{p, v.uv, tex_id});
+                        array_add(*vertices, .{p, v.uv, tex_id, .{0, -1, 0}});
                     }
                 }
                 // Front (Z+)
@@ -238,7 +239,7 @@ update_chunk_mesh :: (using chunk: *JAMC_Chunk, all_chunks: *Table(s64, *JAMC_Ch
                     for i: 12..17 {
                         v := cube_vertices[i];
                         p := (v.position * 0.5) + pos;
-                        array_add(*vertices, .{p, v.uv, tex_id});
+                        array_add(*vertices, .{p, v.uv, tex_id, .{0, 0, 1}});
                     }
                 }
                 // Back (Z-)
@@ -246,7 +247,7 @@ update_chunk_mesh :: (using chunk: *JAMC_Chunk, all_chunks: *Table(s64, *JAMC_Ch
                     for i: 18..23 {
                         v := cube_vertices[i];
                         p := (v.position * 0.5) + pos;
-                        array_add(*vertices, .{p, v.uv, tex_id});
+                        array_add(*vertices, .{p, v.uv, tex_id, .{0, 0, -1}});
                     }
                 }
                  // Right (X+)
@@ -254,7 +255,7 @@ update_chunk_mesh :: (using chunk: *JAMC_Chunk, all_chunks: *Table(s64, *JAMC_Ch
                     for i: 24..29 {
                         v := cube_vertices[i];
                         p := (v.position * 0.5) + pos;
-                        array_add(*vertices, .{p, v.uv, tex_id});
+                        array_add(*vertices, .{p, v.uv, tex_id, .{1, 0, 0}});
                     }
                 }
                 // Left (X-)
@@ -262,7 +263,7 @@ update_chunk_mesh :: (using chunk: *JAMC_Chunk, all_chunks: *Table(s64, *JAMC_Ch
                     for i: 30..35 {
                         v := cube_vertices[i];
                         p := (v.position * 0.5) + pos;
-                        array_add(*vertices, .{p, v.uv, tex_id});
+                        array_add(*vertices, .{p, v.uv, tex_id, .{ -1, 0, 0}});
                     }
                 }
             }
