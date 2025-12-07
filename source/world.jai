@@ -1,8 +1,8 @@
 CHUNK_SIZE   :: 16;
-CHUNK_HEIGHT :: 128;
+CHUNK_HEIGHT :: 8;
 TOTAL_BLOCKS :: CHUNK_SIZE * CHUNK_SIZE * CHUNK_HEIGHT;
 
-WORLD_SIZE   :: 5;
+WORLD_SIZE   :: 64;
 TOTAL_CHUNKS :: WORLD_SIZE * WORLD_SIZE;
 
 JAMC_Block_Type :: enum u8 {
@@ -15,13 +15,16 @@ JAMC_Block_Type :: enum u8 {
 }
 
 JAMC_Block :: struct {
-    model :      Matrix4;
-    texture_id : float;
+    type : JAMC_Block_Type;
 }
 
 JAMC_Chunk :: struct {
     blocks : [TOTAL_BLOCKS]JAMC_Block;
     using position : Vector2;
+    
+    mesh_vbo : GLuint;
+    mesh_vertex_count : s32;
+    is_meshed : bool;
 }
 
 cube_vertices : [36]JAMC_Block_Vertex : .[
@@ -34,7 +37,7 @@ cube_vertices : [36]JAMC_Block_Vertex : .[
     .{.{-1, 1,-1}, .{0, 0}},
 
     // Bottom face (y = -1)
-    .{.{-1,-1, 1}, .{0, 1}}, // Note: Bottom face mapping is often flipped depending on preference
+    .{.{-1,-1, 1}, .{0, 1}},
     .{.{ 1,-1,-1}, .{1, 0}},
     .{.{ 1,-1, 1}, .{1, 1}},
     .{.{-1,-1, 1}, .{0, 1}},
@@ -52,7 +55,7 @@ cube_vertices : [36]JAMC_Block_Vertex : .[
     // Back face (z = -1)
     .{.{-1,-1,-1}, .{1, 0}},
     .{.{ 1, 1,-1}, .{0, 1}},
-    .{.{ 1,-1,-1}, .{1, 1}}, // Adjusted to ensure texture isn't mirrored
+    .{.{ 1,-1,-1}, .{1, 1}}, 
     .{.{-1,-1,-1}, .{1, 0}},
     .{.{-1, 1,-1}, .{0, 0}},
     .{.{ 1, 1,-1}, .{0, 1}},
@@ -80,6 +83,7 @@ Noise_Gen :: struct {
 
 // Simplex Fractal FBM (example string found via search)
 DEFAULT_ENCODED_TREE :: "DQAFAAAAAAAAQAgAAAAAAD8AAAAAAA==";
+VOXEL_SCALE          :: 0.25;
 
 get_fastnoise_id :: (name : string) -> s32 {
     count := fnGetMetadataCount();
@@ -97,7 +101,12 @@ init_noise_generator :: (using noise : *Noise_Gen) {
     assert(node != null);
 }
 
-init_chunk :: (using chunk: *JAMC_Chunk, gen : *Noise_Gen, chunk_x : s32, chunk_z : s32) {
+generate_chunk_blocks :: (using chunk: *JAMC_Chunk, gen : *Noise_Gen, chunk_x : s32, chunk_z : s32) {
+    if !is_meshed {
+        glGenBuffers(1, *mesh_vbo);
+        is_meshed = true;
+    }
+
     noise_buffer := NewArray(TOTAL_BLOCKS, float);
     defer array_free(noise_buffer);
 
@@ -105,28 +114,150 @@ init_chunk :: (using chunk: *JAMC_Chunk, gen : *Noise_Gen, chunk_x : s32, chunk_
 
     fnGenUniformGrid3D(gen.node, noise_buffer.data, chunk_x * CHUNK_SIZE, 0, chunk_z * CHUNK_SIZE, CHUNK_SIZE, CHUNK_HEIGHT, CHUNK_SIZE, 0.02, 42, min_max_out.data);
 
-    block_size := make_scale_matrix4(xyz(0.5));
     for y : 0..CHUNK_HEIGHT - 1 {
         for z : 0..CHUNK_SIZE - 1 {
             for x : 0..CHUNK_SIZE - 1 {
                 index := x + (y * CHUNK_SIZE) + (z * CHUNK_SIZE * CHUNK_HEIGHT);
                 block := *blocks[index];
-                pos := Vector3.{xx (x + (chunk_x * CHUNK_SIZE)), xx y, xx (z + (chunk_z * CHUNK_SIZE))};
-
+                
                 noise_val := noise_buffer[index];
                 height_gradient := cast(float) y / cast(float) CHUNK_HEIGHT;
                 density := noise_val - (height_gradient * 2.0 - 0.2);
 
-                block_type := JAMC_Block_Type.AIR;
+                block.type = .AIR;
                 if density < 0.15 {
-                    block_type = .DIRT;
+                    block.type = .DIRT;
                 } else {
-                    block_type = .STONE;
+                    block.type = .STONE;
                 }
-                model := make_translation_matrix4(pos) * block_size;
-                block.model = transpose(model);
-                block.texture_id = material_ids[block_type];
             }
         }
     }
+}
+
+// Temporary vertex struct for chunk meshing
+Chunk_Vertex :: struct {
+    p : Vector3;
+    uv : Vector2;
+    tex_id : float;
+}
+
+update_chunk_mesh :: (using chunk: *JAMC_Chunk, all_chunks: []JAMC_Chunk) {
+    // Generate mesh data
+    vertices : [..]Chunk_Vertex;
+    vertices.allocator = temp;
+    
+    // Check neighbors
+    is_transparent :: (local_x: s32, local_y: s32, local_z: s32, current_chunk: *JAMC_Chunk, all_chunks: []JAMC_Chunk) -> bool {
+        
+        target_x := local_x;
+        target_y := local_y;
+        target_z := local_z;
+        
+        chunk_idx_x := cast(s32) current_chunk.position.x;
+        chunk_idx_z := cast(s32) current_chunk.position.y; // .y is Z in grid coords
+
+        // Adjust for neighbor chunks
+        if target_x < 0 {
+            chunk_idx_x -= 1;
+            target_x += CHUNK_SIZE;
+        } else if target_x >= CHUNK_SIZE {
+            chunk_idx_x += 1;
+            target_x -= CHUNK_SIZE;
+        }
+
+        if target_z < 0 {
+            chunk_idx_z -= 1;
+            target_z += CHUNK_SIZE;
+        } else if target_z >= CHUNK_SIZE {
+            chunk_idx_z += 1;
+            target_z -= CHUNK_SIZE;
+        }
+
+        // World Bounds Check
+        if chunk_idx_x < 0 || chunk_idx_x >= WORLD_SIZE || chunk_idx_z < 0 || chunk_idx_z >= WORLD_SIZE {
+             return true; // Empty void outside world
+        }
+        
+        if target_y < 0 || target_y >= CHUNK_HEIGHT return true;
+
+        final_chunk_index := chunk_idx_x + (chunk_idx_z * WORLD_SIZE);
+        block_index := target_x + (target_y * CHUNK_SIZE) + (target_z * CHUNK_SIZE * CHUNK_HEIGHT);
+        
+        // Safety check
+        if final_chunk_index < 0 || final_chunk_index >= all_chunks.count return true;
+
+        target_block := all_chunks[final_chunk_index].blocks[block_index];
+        return target_block.type == .AIR;
+    }
+
+    for y : 0..cast(s32)(CHUNK_HEIGHT - 1) {
+        for z : 0..cast(s32)(CHUNK_SIZE - 1) {
+            for x : 0..cast(s32)(CHUNK_SIZE - 1) {
+                index := x + (y * CHUNK_SIZE) + (z * CHUNK_SIZE * CHUNK_HEIGHT);
+                block := blocks[index];
+                if block.type == .AIR continue;
+                
+                tex_id := material_ids[block.type];
+
+                pos := Vector3.{xx x, xx y, xx z}; // Local position
+                
+                // Check all 6 faces
+                // Top (Y+)
+                if is_transparent(x, y + 1, z, chunk, all_chunks) {
+                    for i: 0..5 {
+                        v := cube_vertices[i];
+                        p := (v.position * 0.5) + pos;
+                        array_add(*vertices, .{p, v.uv, tex_id});
+                    }
+                }
+                // Bottom (Y-)
+                if is_transparent(x, y - 1, z, chunk, all_chunks) {
+                    for i: 6..11 {
+                        v := cube_vertices[i];
+                        p := (v.position * 0.5) + pos;
+                        array_add(*vertices, .{p, v.uv, tex_id});
+                    }
+                }
+                // Front (Z+)
+                if is_transparent(x, y, z + 1, chunk, all_chunks) {
+                    for i: 12..17 {
+                        v := cube_vertices[i];
+                        p := (v.position * 0.5) + pos;
+                        array_add(*vertices, .{p, v.uv, tex_id});
+                    }
+                }
+                // Back (Z-)
+                if is_transparent(x, y, z - 1, chunk, all_chunks) {
+                    for i: 18..23 {
+                        v := cube_vertices[i];
+                        p := (v.position * 0.5) + pos;
+                        array_add(*vertices, .{p, v.uv, tex_id});
+                    }
+                }
+                 // Right (X+)
+                if is_transparent(x + 1, y, z, chunk, all_chunks) {
+                    for i: 24..29 {
+                        v := cube_vertices[i];
+                        p := (v.position * 0.5) + pos;
+                        array_add(*vertices, .{p, v.uv, tex_id});
+                    }
+                }
+                // Left (X-)
+                if is_transparent(x - 1, y, z, chunk, all_chunks) {
+                    for i: 30..35 {
+                        v := cube_vertices[i];
+                        p := (v.position * 0.5) + pos;
+                        array_add(*vertices, .{p, v.uv, tex_id});
+                    }
+                }
+            }
+        }
+    }
+
+    mesh_vertex_count = xx vertices.count;
+    
+    glBindBuffer(GL_ARRAY_BUFFER, mesh_vbo);
+    glBufferData(GL_ARRAY_BUFFER, vertices.count * size_of(Chunk_Vertex), vertices.data, GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
 }

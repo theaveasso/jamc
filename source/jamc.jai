@@ -123,8 +123,12 @@ main :: () {
             chunk := *world[index];
             chunk.x = xx cx;
             chunk.y = xx cz;
-            init_chunk(chunk, *noise, xx cx, xx cz);
+            generate_chunk_blocks(chunk, *noise, xx cx, xx cz);
         }
+    }
+
+    for *chunk : world {
+        update_chunk_mesh(chunk, world);
     }
     init_rendering_objects();
 

@@ -95,7 +95,7 @@ create_shader_program :: (vertex_source : string, fragment_source : string) -> b
 init_rendering_objects :: () -> bool {
     ok : bool;
     ok, line_shader  = create_shader_program(LINE_VERTEX_SHADER, LINE_FRAGMENT_SHADER);
-    ok, chunk_shader = create_shader_program(CUBE_INSTANCING_VERTEX_SHADER, CUBE_FRAGMENT_SHADER);
+    ok, chunk_shader = create_shader_program(CHUNK_VERTEX_SHADER, CHUNK_FRAGMENT_SHADER);
     if !ok then return false;
 
     {
@@ -118,33 +118,28 @@ init_rendering_objects :: () -> bool {
         glBindVertexArray(chunk_vao);
         defer glBindVertexArray(0);
 
-        glGenBuffers(1, *block_vbo);
-        glBindBuffer(GL_ARRAY_BUFFER, block_vbo);
-        glBufferData(GL_ARRAY_BUFFER, size_of(JAMC_Block_Vertex) * 36, cube_vertices.data, GL_STATIC_DRAW);
-
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, size_of(JAMC_Block_Vertex), cast(*void) 0);
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, size_of(JAMC_Block_Vertex), cast(*void) size_of(Vector3));
-
-        glGenBuffers(1, *chunk_instance_vbo);
-        glBindBuffer(GL_ARRAY_BUFFER, chunk_instance_vbo);
-
-        MAX_INSTANCES :: TOTAL_BLOCKS;
-        glBufferData(GL_ARRAY_BUFFER, MAX_INSTANCES * size_of(JAMC_Block), null, GL_DYNAMIC_DRAW);
-
-        for i: 0..3 {
-            loc := 2 + i;
-            glEnableVertexAttribArray(xx loc);
-            glVertexAttribPointer(xx loc, 4, GL_FLOAT, GL_FALSE, size_of(JAMC_Block), cast(*void) (size_of(Vector4) * i));
-            glVertexAttribDivisor(xx loc, 1);
-        }
-
-        glEnableVertexAttribArray(6);
-        glVertexAttribPointer(6, 1, GL_FLOAT, GL_FALSE, size_of(JAMC_Block), cast(*void) size_of(Matrix4));
-        glVertexAttribDivisor(6, 1);
-
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        // We will just set up the VAO format here, the VBO will be bound per chunk
+        // Chunk_Vertex format in world.jai:
+        // p: Vector3
+        // uv: Vector2
+        // tex_id: float
+        
+        // We need a dummy VBO to enable attributes, or just enable them after binding the specific VBO
+        // Actually, VAO stores the attribute pointers/enable state. We need to bind *some* buffer to set pointers.
+        // But since each chunk has its own VBO, we need to bind that VBO before drawing and maybe setup attributes again?
+        // OR: Better approach - All chunks share the same vertex format.
+        // If we want to use one VAO for all chunks, we need to call glVertexAttribPointer every frame or bind the VBO to the same binding point?
+        // Actually, glVertexAttribPointer *captures* the currently bound GL_ARRAY_BUFFER into the VAO state. 
+        // So strict VAO usage would mean we need a VAO *per chunk* if we want to avoid resetting pointers, which is expensive on VRAM/Handles?
+        // Or we can just bind the VBO and re-declare pointers (the "Old School" Core Profile way without VAO object per mesh).
+        // Since we have a global `chunk_vao`, we will just bind it, then bind the chunk's VBO, then call VertexAttribPointer.
+        
+        // To make it slightly cleaner, let's just use the VAO to enable the arrays, but we will have to call VertexAttribPointer every time we switch VBO unless we use VertexBufferBinding (GL 4.3+).
+        // Let's stick to standard GL 3.3: Bind VAO, Enable Attribs, (Loop: Bind VBO, Pointer, Draw).
+        
+        glEnableVertexAttribArray(0); // Pos
+        glEnableVertexAttribArray(1); // UV
+        glEnableVertexAttribArray(2); // TexID
     }
 
     event_enqueue(.{debug_message = "Rendering Objects initialized!"});
@@ -171,12 +166,20 @@ draw_line :: (start : Vector3, end : Vector3, start_color : Vector4, end_color :
 }
 
 draw_chunk :: (using chunk : *JAMC_Chunk) {
+    if !is_meshed || mesh_vertex_count == 0 return;
+
     glBindVertexArray(chunk_vao);
     defer glBindVertexArray(0);
 
-    glBindBuffer(GL_ARRAY_BUFFER, chunk_instance_vbo);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, blocks.count * size_of(JAMC_Block), blocks.data);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ARRAY_BUFFER, mesh_vbo);
+    
+    // Chunk_Vertex struct layout needs to be consistent here
+    // p: 0, uv: 12, tex: 20 -> stride 24
+    stride := 24; // 3*4 + 2*4 + 1*4
+    
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, xx stride, cast(*void) 0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, xx stride, cast(*void) 12);
+    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, xx stride, cast(*void) 20);
 
     glUseProgram(chunk_shader);
     glActiveTexture(GL_TEXTURE0);
@@ -188,10 +191,17 @@ draw_chunk :: (using chunk : *JAMC_Chunk) {
     glBindTexture(GL_TEXTURE_2D_ARRAY, texture.gl_handle);
 
     view_proj_loc := glGetUniformLocation(chunk_shader, "u_View_Projection_Matrix");
-    tex\     _loc := glGetUniformLocation(chunk_shader, "u_Block_Textures");
+    tex_loc := glGetUniformLocation(chunk_shader, "u_Block_Textures");
+    model_loc := glGetUniformLocation(chunk_shader, "u_Model_Matrix");
+
+    chunk_model_matrix := make_translation_matrix4(xyz(position.x * CHUNK_SIZE * VOXEL_SCALE, 0, position.y * CHUNK_SIZE * VOXEL_SCALE));
+    chunk_model_matrix = chunk_model_matrix * make_scale_matrix4(xyz(VOXEL_SCALE));
+
     glUniformMatrix4fv(view_proj_loc, 1, GL_TRUE, *camera.view_projection_matrix.coef[0][0]);
+    glUniformMatrix4fv(model_loc, 1, GL_TRUE, *chunk_model_matrix.coef[0][0]);
     glUniform1i(tex_loc, 0);
-    glDrawArraysInstanced(GL_TRIANGLES, 0, 36, xx blocks.count);
+    
+    glDrawArrays(GL_TRIANGLES, 0, xx mesh_vertex_count);
 }
 
 SHADER_PREFIX :: #string END
@@ -224,14 +234,14 @@ void main () {
 }
 GLSL
 
-CUBE_INSTANCING_VERTEX_SHADER :: #string GLSL
+CHUNK_VERTEX_SHADER :: #string GLSL
 
 layout (location = 0) in vec3  a_Position;
 layout (location = 1) in vec2  a_UV;
-layout (location = 2) in mat4  a_Model_Matrix;
-layout (location = 6) in float a_TexID;
+layout (location = 2) in float a_TexID;
 
 uniform mat4 u_View_Projection_Matrix;
+uniform mat4 u_Model_Matrix;
 
 out vec2  v_UV;
 out float v_TexID;
@@ -239,11 +249,11 @@ out float v_TexID;
 void main () {
     v_UV    = a_UV;
     v_TexID = a_TexID;
-    gl_Position = u_View_Projection_Matrix * a_Model_Matrix * vec4(a_Position, 1);
+    gl_Position = u_View_Projection_Matrix * u_Model_Matrix * vec4(a_Position, 1);
 }
 GLSL
 
-CUBE_FRAGMENT_SHADER :: #string GLSL
+CHUNK_FRAGMENT_SHADER :: #string GLSL
 
 in vec2  v_UV;
 in float v_TexID;
