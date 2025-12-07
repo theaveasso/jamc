@@ -27,6 +27,8 @@ VPIXELS :: 360;
 TARGET_FPS :: 60;
 TARGET_DT  :: 1.0 / TARGET_FPS;
 
+RENDER_DISTANCE :: 16;
+
 Game_Camera :: struct {
     using camera    : Camera;
     control_camera  : bool;
@@ -73,7 +75,7 @@ Game_State :: struct {
    playfield_height : s32;
 
    noise            : Noise_Gen;
-   world            : [TOTAL_CHUNKS]JAMC_Chunk;
+   world            : Table(s64, *JAMC_Chunk);
 
    player_handle    : Entity_Handle;
 
@@ -117,19 +119,10 @@ main :: () {
     init_entities();
 
     init_noise_generator(*noise);
-    for cx : 0..WORLD_SIZE - 1 {
-        for cz : 0..WORLD_SIZE - 1 {
-            index := cx + (cz * WORLD_SIZE);
-            chunk := *world[index];
-            chunk.x = xx cx;
-            chunk.y = xx cz;
-            generate_chunk_blocks(chunk, *noise, xx cx, xx cz);
-        }
-    }
+    
+    // Initial generation will happen in the loop or we can force it here
+    update_world_generation();
 
-    for *chunk : world {
-        update_chunk_mesh(chunk, world);
-    }
     init_rendering_objects();
 
     glEnable(GL_BLEND);
@@ -149,22 +142,22 @@ main :: () {
         process_input();
         event_update();
         camera_update(current_dt);
+        update_world_generation();
+
 
         glDepthMask(GL_TRUE);
         glEnable(GL_DEPTH_TEST);
         glClear(GL_DEPTH_BUFFER_BIT);
         Simp.clear_render_target(.1, .1, .1, 1);
 
-        for i : -10..10
-			draw_line(xyz (xx i, 0, -10), xyz (xx i, 0, 10), .{0.4, 0.4, 0.4, 1});
-		for i : -10..10
-			draw_line(xyz (-10, 0, xx i), xyz (10, 0, xx i), .{0.4, 0.4, 0.4, 1});
-
         draw_line(.{}, .{x=1}, .{x=1, w=1});
 		draw_line(.{}, .{y=1}, .{y=1, w=1});
 		draw_line(.{}, .{z=1}, .{z=1, w=1});
 
-		for *world draw_chunk(it);
+		for chunk, key : world {
+            draw_chunk(chunk);
+        }
+
 
         Simp.clear_scissor();
         Simp.swap_buffers(window);
@@ -255,6 +248,49 @@ set_mouse_pointer_position :: inline (x : int, y : int)
 	{
 		user32 :: #library,system "User32";
 		SetCursorPos :: (x : s32, y : s32) -> s32 #foreign user32;
-		SetCursorPos(xx x, xx y);
 	}
+}
+
+update_world_generation :: () {
+    // Determine player's chunk position
+    px := gs.camera.position.x;
+    pz := gs.camera.position.z;
+
+    player_chunk_x := cast(s32) floor(px / CHUNK_SIZE);
+    player_chunk_z := cast(s32) floor(pz / CHUNK_SIZE);
+
+    // Simple radius check
+    // Optimization: Spiral out or smarter queue, but simple double loop for now
+    for x : player_chunk_x - RENDER_DISTANCE .. player_chunk_x + RENDER_DISTANCE {
+        for z : player_chunk_z - RENDER_DISTANCE .. player_chunk_z + RENDER_DISTANCE {
+            key := get_chunk_key(x, z);
+            if !table_contains(*world, key) {
+                // Generate new chunk
+                chunk := New(JAMC_Chunk);
+                chunk.position.x = xx x;
+                chunk.position.y = xx z;
+                
+                generate_chunk_blocks(chunk, *noise, x, z);
+                table_add(*world, key, chunk);
+                
+                // Mesh this chunk
+                // Pass *world explicitly as it expects *Table
+                update_chunk_mesh(chunk, *world);
+                
+                // Update neighbors because they might need to hide/show faces now that this chunk exists
+                update_neighbor_mesh(x - 1, z);
+                update_neighbor_mesh(x + 1, z);
+                update_neighbor_mesh(x, z - 1);
+                update_neighbor_mesh(x, z + 1);
+            }
+        }
+    }
+}
+
+update_neighbor_mesh :: (x: s32, z: s32) {
+    key := get_chunk_key(x, z);
+    chunk, found := table_find(*world, key);
+    if found {
+        update_chunk_mesh(chunk, *world);
+    }
 }

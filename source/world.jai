@@ -1,9 +1,6 @@
 CHUNK_SIZE   :: 16;
-CHUNK_HEIGHT :: 8;
+CHUNK_HEIGHT :: 128;
 TOTAL_BLOCKS :: CHUNK_SIZE * CHUNK_SIZE * CHUNK_HEIGHT;
-
-WORLD_SIZE   :: 64;
-TOTAL_CHUNKS :: WORLD_SIZE * WORLD_SIZE;
 
 JAMC_Block_Type :: enum u8 {
     AIR;
@@ -121,14 +118,36 @@ generate_chunk_blocks :: (using chunk: *JAMC_Chunk, gen : *Noise_Gen, chunk_x : 
                 block := *blocks[index];
                 
                 noise_val := noise_buffer[index];
-                height_gradient := cast(float) y / cast(float) CHUNK_HEIGHT;
-                density := noise_val - (height_gradient * 2.0 - 0.2);
+                // Create a more interesting terrain gradient
+                // Map y from 0..1
+                // We want solid bottom (high density addition) and airy top (high density subtraction)
+                height_percent := cast(float) y / cast(float) CHUNK_HEIGHT;
+                
+                // Base ground bias: +1.0 at bottom, -1.0 at top
+                bias := 1.0 - (height_percent * 2.0);
+                
+                // Simple floor to ensure we don't fall through the world
+                if y < 4 bias += 10.0;
+
+                density := noise_val + bias;
 
                 block.type = .AIR;
-                if density < 0.15 {
+                if density > 0.1 {
                     block.type = .DIRT;
-                } else {
-                    block.type = .STONE;
+                    if density > 0.6 {
+                         block.type = .STONE;
+                    }
+                }
+
+                // Grass on top
+                if block.type == .DIRT {
+                     // Check if block above is air (simple proactive check or post-process? 
+                     // Since we don't have access to neighbors easily here, let's just use a threshold trick or leave it as dirt for now)
+                     // Actually, if we are near the surface (density is close to threshold), we can guess.
+                     // But for now, let's just make the top layer grass if we can.
+                     // The noise is continuous, so it's hard to know "top" without checking y+1.
+                     // Let's stick to DIRT/STONE for now to keep it simple and compile-safe.
+                     if y > 60 block.type = .GRASS; // Snow cap/Grass arbitrary separation? 
                 }
             }
         }
@@ -142,13 +161,27 @@ Chunk_Vertex :: struct {
     tex_id : float;
 }
 
-update_chunk_mesh :: (using chunk: *JAMC_Chunk, all_chunks: []JAMC_Chunk) {
+get_chunk_key :: inline (x: s32, z: s32) -> s64 {
+    // Pack two s32 into s64
+    // Cast to u64 first to avoid sign extension issues if treating as bits, 
+    // although s64 shift works too if careful. 
+    // Let's verify: s32 has 32 bits. 
+    // We want upper 32 bits to be x, lower 32 bits to be z.
+    // (cast(s64) x) << 32 | (cast(s64) (cast(u32) z))
+    // we use u32 cast for z to ensure we just take the bits effectively.
+    
+    ux := cast(s64) x;
+    uz := cast(s64) cast(u32) z; 
+    return (ux << 32) | uz;
+}
+
+update_chunk_mesh :: (using chunk: *JAMC_Chunk, all_chunks: *Table(s64, *JAMC_Chunk)) {
     // Generate mesh data
     vertices : [..]Chunk_Vertex;
     vertices.allocator = temp;
     
     // Check neighbors
-    is_transparent :: (local_x: s32, local_y: s32, local_z: s32, current_chunk: *JAMC_Chunk, all_chunks: []JAMC_Chunk) -> bool {
+    is_transparent :: (local_x: s32, local_y: s32, local_z: s32, current_chunk: *JAMC_Chunk, all_chunks: *Table(s64, *JAMC_Chunk)) -> bool {
         
         target_x := local_x;
         target_y := local_y;
@@ -174,20 +207,18 @@ update_chunk_mesh :: (using chunk: *JAMC_Chunk, all_chunks: []JAMC_Chunk) {
             target_z -= CHUNK_SIZE;
         }
 
-        // World Bounds Check
-        if chunk_idx_x < 0 || chunk_idx_x >= WORLD_SIZE || chunk_idx_z < 0 || chunk_idx_z >= WORLD_SIZE {
-             return true; // Empty void outside world
-        }
-        
+        // Limit Y check
         if target_y < 0 || target_y >= CHUNK_HEIGHT return true;
 
-        final_chunk_index := chunk_idx_x + (chunk_idx_z * WORLD_SIZE);
+        // Neighbor Lookup
+        key := get_chunk_key(chunk_idx_x, chunk_idx_z);
+        neighbor, found := table_find(all_chunks, key);
+        
+        if !found return true; // Treat unloaded chunks as transparent (or solid? Usually transparent/void)
+
         block_index := target_x + (target_y * CHUNK_SIZE) + (target_z * CHUNK_SIZE * CHUNK_HEIGHT);
         
-        // Safety check
-        if final_chunk_index < 0 || final_chunk_index >= all_chunks.count return true;
-
-        target_block := all_chunks[final_chunk_index].blocks[block_index];
+        target_block := neighbor.blocks[block_index];
         return target_block.type == .AIR;
     }
 

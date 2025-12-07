@@ -17,8 +17,8 @@ Camera :: struct {
 }
 
 init_camera :: () {
-    camera.position = xyz(8., 6., 8.);
-    camera.euler_angles.x = -20 * PI / 180.0;
+    camera.position = xyz(8., 60., 8.); // Start higher up
+    camera.euler_angles.x = -10 * PI / 180.0; // Look down slightly
     camera.euler_angles.y =  45 * PI / 180.0;
 }
 
