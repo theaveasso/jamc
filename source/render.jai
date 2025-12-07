@@ -7,7 +7,7 @@ JAMC_Block_Vertex :: struct {
     uv:         Vector2;
 }
 
-JAMC_Line_Vetex :: struct {
+JAMC_Line_Vertex :: struct {
     position:   Vector3;
     color:      Vector4;
 }
@@ -107,36 +107,17 @@ init_rendering_objects :: () -> bool {
         glBindBuffer(GL_ARRAY_BUFFER, line_vbo);
         defer glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-        glBufferData(GL_ARRAY_BUFFER, size_of(JAMC_Line_Vetex) * 2, null, GL_DYNAMIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER, size_of(JAMC_Line_Vertex) * 2, null, GL_DYNAMIC_DRAW);
         glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, size_of(JAMC_Line_Vetex), cast(*void) 0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, size_of(JAMC_Line_Vertex), cast(*void) 0);
         glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, size_of(JAMC_Line_Vetex), cast(*void) size_of(Vector3));
+        glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, size_of(JAMC_Line_Vertex), cast(*void) size_of(Vector3));
     }
     {
         glGenVertexArrays(1, *chunk_vao);
         glBindVertexArray(chunk_vao);
         defer glBindVertexArray(0);
 
-        // We will just set up the VAO format here, the VBO will be bound per chunk
-        // Chunk_Vertex format in world.jai:
-        // p: Vector3
-        // uv: Vector2
-        // tex_id: float
-        
-        // We need a dummy VBO to enable attributes, or just enable them after binding the specific VBO
-        // Actually, VAO stores the attribute pointers/enable state. We need to bind *some* buffer to set pointers.
-        // But since each chunk has its own VBO, we need to bind that VBO before drawing and maybe setup attributes again?
-        // OR: Better approach - All chunks share the same vertex format.
-        // If we want to use one VAO for all chunks, we need to call glVertexAttribPointer every frame or bind the VBO to the same binding point?
-        // Actually, glVertexAttribPointer *captures* the currently bound GL_ARRAY_BUFFER into the VAO state. 
-        // So strict VAO usage would mean we need a VAO *per chunk* if we want to avoid resetting pointers, which is expensive on VRAM/Handles?
-        // Or we can just bind the VBO and re-declare pointers (the "Old School" Core Profile way without VAO object per mesh).
-        // Since we have a global `chunk_vao`, we will just bind it, then bind the chunk's VBO, then call VertexAttribPointer.
-        
-        // To make it slightly cleaner, let's just use the VAO to enable the arrays, but we will have to call VertexAttribPointer every time we switch VBO unless we use VertexBufferBinding (GL 4.3+).
-        // Let's stick to standard GL 3.3: Bind VAO, Enable Attribs, (Loop: Bind VBO, Pointer, Draw).
-        
         glEnableVertexAttribArray(0); // Pos
         glEnableVertexAttribArray(1); // UV
         glEnableVertexAttribArray(2); // TexID
@@ -152,7 +133,7 @@ draw_line :: inline (start : Vector3, end : Vector3, color : Vector4) {
 }
 
 draw_line :: (start : Vector3, end : Vector3, start_color : Vector4, end_color : Vector4) {
-    data : [2]JAMC_Line_Vetex = ---;
+    data : [2]JAMC_Line_Vertex = ---;
     data[0].position = start;
     data[0].color    = start_color;
     data[1].position = end;
@@ -160,7 +141,7 @@ draw_line :: (start : Vector3, end : Vector3, start_color : Vector4, end_color :
 
     glBindVertexArray(line_vao);
     glBindBuffer(GL_ARRAY_BUFFER, line_vbo);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, size_of (JAMC_Line_Vetex) * 2, data.data);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, size_of (JAMC_Line_Vertex) * 2, data.data);
     glUseProgram(line_shader);
     glUniformMatrix4fv(glGetUniformLocation(line_shader, "u_View_Projection_Matrix"), 1, GL_TRUE, *camera.view_projection_matrix.coef[0][0]);
     glDrawArrays(GL_LINES, 0, 2);
@@ -280,17 +261,10 @@ void main () {
     if (Tex_Color.a < 0.1) discard;
 
     vec3 normal_map = texture(u_Normal_Maps, vec3(v_UV, v_TexID)).rgb;
-    // Map from [0, 1] to [-1, 1]
+    // Map normal from [0, 1] to [-1, 1]
     normal_map = normalize(normal_map * 2.0 - 1.0);
 
-    // Calculate TBN
-    // Since we are using cubes, we can assume tangent/bitangent based on normal or derivatives
-    // For simplicity with flat surfaces, let's use derivatives which works for arbitrary UV mapping
-    vec3 Q1  = dFdx(vec3(0,0,0)); // World Pos not available? We can just use v_Normal as base
-    // Actually, to do proper normal mapping on a cube without passing Tangents, checks are needed.
-    // However, with standard cube UVs, we can infer.
-    
-    // Simple TBN derivation
+    // Calculate TBN without pre-computed tangents (assumes cube alignment/UVs work well with derivatives)
     vec3 N = normalize(v_Normal);
     vec3 T = abs(N.y) > 0.99 ? vec3(1, 0, 0) : normalize(cross(vec3(0, 1, 0), N));
     vec3 B = cross(N, T);
@@ -305,20 +279,11 @@ void main () {
     
     // Specular
     float specular_strength = texture(u_Specular_Maps, vec3(v_UV, v_TexID)).r;
-    vec3 view_dir = vec3(0, 0, 1); // Approximation or passed in
-    // Since we don't have view pos in frag yet, let's stick to simple Blinn-Phong with 'view_dir' roughly from camera?
-    // Actually, let's assume view vector is roughly along normal for basic highlight or pass camera pos.
-    // For now, let's skip view-dependent view_dir and use half-vector with fixed view.
-    // Better: just use light reflection.
-    vec3 reflect_dir = reflect(-light_dir, final_normal);
-    // Assuming view is from -Z (standard) ?? No, this is world space.
-    // Let's just use a simple dot(N, H) or similar.
-    // For now: simple specular 
     float spec = pow(max(dot(final_normal, light_dir), 0.0), 32); 
 
     vec3 ambient = vec3(0.4);
     vec3 diffuse = diff * vec3(1.0);
-    vec3 specular = spec * specular_strength * vec3(1.0); // White light
+    vec3 specular = spec * specular_strength * vec3(1.0);
 
     vec3 result = (ambient + diffuse) * Tex_Color.rgb + specular;
 

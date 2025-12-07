@@ -82,15 +82,6 @@ Noise_Gen :: struct {
 DEFAULT_ENCODED_TREE :: "DQAFAAAAAAAAQAgAAAAAAD8AAAAAAA==";
 VOXEL_SCALE          :: 0.25;
 
-get_fastnoise_id :: (name : string) -> s32 {
-    count := fnGetMetadataCount();
-    for i : 0..count - 1 {
-        c_name := fnGetMetadataName(i);
-        if to_string(c_name) == name return i;
-    }
-    return -1;
-}
-
 init_noise_generator :: (using noise : *Noise_Gen) {
     encoded_str := DEFAULT_ENCODED_TREE;
     c_str := temp_c_string(encoded_str);
@@ -118,15 +109,10 @@ generate_chunk_blocks :: (using chunk: *JAMC_Chunk, gen : *Noise_Gen, chunk_x : 
                 block := *blocks[index];
                 
                 noise_val := noise_buffer[index];
-                // Create a more interesting terrain gradient
-                // Map y from 0..1
-                // We want solid bottom (high density addition) and airy top (high density subtraction)
-                height_percent := cast(float) y / cast(float) CHUNK_HEIGHT;
                 
-                // Base ground bias: +1.0 at bottom, -1.0 at top
+                height_percent := cast(float) y / cast(float) CHUNK_HEIGHT;
                 bias := 1.0 - (height_percent * 2.0);
                 
-                // Simple floor to ensure we don't fall through the world
                 if y < 4 bias += 10.0;
 
                 density := noise_val + bias;
@@ -156,55 +142,57 @@ get_chunk_key :: inline (x: s32, z: s32) -> s64 {
     return top | bottom;
 }
 
+
+check_neighbor_transparency :: (local_x: s32, local_y: s32, local_z: s32, chunk_x: s32, chunk_z: s32, all_chunks: *Table(s64, *JAMC_Chunk)) -> bool {
+    target_x := local_x;
+    target_y := local_y;
+    target_z := local_z;
+    
+    cx := chunk_x;
+    cz := chunk_z;
+
+    // Adjust for neighbor chunks
+    if target_x < 0 {
+        cx -= 1;
+        target_x += CHUNK_SIZE;
+    } else if target_x >= CHUNK_SIZE {
+        cx += 1;
+        target_x -= CHUNK_SIZE;
+    }
+
+    if target_z < 0 {
+        cz -= 1;
+        target_z += CHUNK_SIZE;
+    } else if target_z >= CHUNK_SIZE {
+        cz += 1;
+        target_z -= CHUNK_SIZE;
+    }
+
+    // Limit Y check
+    if target_y < 0 || target_y >= CHUNK_HEIGHT return true;
+
+    // Neighbor Lookup
+    key := get_chunk_key(cx, cz);
+    
+    found, neighbor := table_find(all_chunks, key);
+    if !found return true; 
+
+    // Calculate index in neighbor
+    block_index := target_x + (target_y * CHUNK_SIZE) + (target_z * CHUNK_SIZE * CHUNK_HEIGHT);
+    
+    idx := cast(s64) block_index;
+    if idx < 0 || idx >= TOTAL_BLOCKS return true;
+    
+    target_block := neighbor.blocks[idx];
+    return target_block.type == .AIR;
+}
+
 update_chunk_mesh :: (using chunk: *JAMC_Chunk, all_chunks: *Table(s64, *JAMC_Chunk)) {
-    // Generate mesh data
     vertices : [..]Chunk_Vertex;
     vertices.allocator = temp;
     
-    // Check neighbors
-    is_transparent :: (local_x: s32, local_y: s32, local_z: s32, current_chunk: *JAMC_Chunk, all_chunks: *Table(s64, *JAMC_Chunk)) -> bool {
-        
-        target_x := local_x;
-        target_y := local_y;
-        target_z := local_z;
-        
-        chunk_idx_x := cast(s32) current_chunk.position.x;
-        chunk_idx_z := cast(s32) current_chunk.position.y; // .y is Z in grid coords
-
-        // Adjust for neighbor chunks
-        if target_x < 0 {
-            chunk_idx_x -= 1;
-            target_x += CHUNK_SIZE;
-        } else if target_x >= CHUNK_SIZE {
-            chunk_idx_x += 1;
-            target_x -= CHUNK_SIZE;
-        }
-
-        if target_z < 0 {
-            chunk_idx_z -= 1;
-            target_z += CHUNK_SIZE;
-        } else if target_z >= CHUNK_SIZE {
-            chunk_idx_z += 1;
-            target_z -= CHUNK_SIZE;
-        }
-
-        // Limit Y check
-        if target_y < 0 || target_y >= CHUNK_HEIGHT return true;
-
-        // Neighbor Lookup
-        key := get_chunk_key(chunk_idx_x, chunk_idx_z);
-        
-        found, neighbor := table_find(all_chunks, key);
-        if !found return true; 
-
-        block_index := target_x + (target_y * CHUNK_SIZE) + (target_z * CHUNK_SIZE * CHUNK_HEIGHT);
-        
-        idx := cast(s64) block_index;
-        if idx < 0 || idx >= TOTAL_BLOCKS return true;
-        
-        target_block := neighbor.blocks[idx];
-        return target_block.type == .AIR;
-    }
+    cx := cast(s32) chunk.position.x;
+    cz := cast(s32) chunk.position.y;
 
     for y : 0..cast(s32)(CHUNK_HEIGHT - 1) {
         for z : 0..cast(s32)(CHUNK_SIZE - 1) {
@@ -215,11 +203,10 @@ update_chunk_mesh :: (using chunk: *JAMC_Chunk, all_chunks: *Table(s64, *JAMC_Ch
                 
                 tex_id := material_ids[block.type];
 
-                pos := Vector3.{xx x, xx y, xx z}; // Local position
+                pos := Vector3.{xx x, xx y, xx z};
                 
-                // Check all 6 faces
                 // Top (Y+)
-                if is_transparent(x, y + 1, z, chunk, all_chunks) {
+                if check_neighbor_transparency(x, y + 1, z, cx, cz, all_chunks) {
                     for i: 0..5 {
                         v := cube_vertices[i];
                         p := (v.position * 0.5) + pos;
@@ -227,7 +214,7 @@ update_chunk_mesh :: (using chunk: *JAMC_Chunk, all_chunks: *Table(s64, *JAMC_Ch
                     }
                 }
                 // Bottom (Y-)
-                if is_transparent(x, y - 1, z, chunk, all_chunks) {
+                if check_neighbor_transparency(x, y - 1, z, cx, cz, all_chunks) {
                     for i: 6..11 {
                         v := cube_vertices[i];
                         p := (v.position * 0.5) + pos;
@@ -235,7 +222,7 @@ update_chunk_mesh :: (using chunk: *JAMC_Chunk, all_chunks: *Table(s64, *JAMC_Ch
                     }
                 }
                 // Front (Z+)
-                if is_transparent(x, y, z + 1, chunk, all_chunks) {
+                if check_neighbor_transparency(x, y, z + 1, cx, cz, all_chunks) {
                     for i: 12..17 {
                         v := cube_vertices[i];
                         p := (v.position * 0.5) + pos;
@@ -243,7 +230,7 @@ update_chunk_mesh :: (using chunk: *JAMC_Chunk, all_chunks: *Table(s64, *JAMC_Ch
                     }
                 }
                 // Back (Z-)
-                if is_transparent(x, y, z - 1, chunk, all_chunks) {
+                if check_neighbor_transparency(x, y, z - 1, cx, cz, all_chunks) {
                     for i: 18..23 {
                         v := cube_vertices[i];
                         p := (v.position * 0.5) + pos;
@@ -251,7 +238,7 @@ update_chunk_mesh :: (using chunk: *JAMC_Chunk, all_chunks: *Table(s64, *JAMC_Ch
                     }
                 }
                  // Right (X+)
-                if is_transparent(x + 1, y, z, chunk, all_chunks) {
+                if check_neighbor_transparency(x + 1, y, z, cx, cz, all_chunks) {
                     for i: 24..29 {
                         v := cube_vertices[i];
                         p := (v.position * 0.5) + pos;
@@ -259,7 +246,7 @@ update_chunk_mesh :: (using chunk: *JAMC_Chunk, all_chunks: *Table(s64, *JAMC_Ch
                     }
                 }
                 // Left (X-)
-                if is_transparent(x - 1, y, z, chunk, all_chunks) {
+                if check_neighbor_transparency(x - 1, y, z, cx, cz, all_chunks) {
                     for i: 30..35 {
                         v := cube_vertices[i];
                         p := (v.position * 0.5) + pos;
