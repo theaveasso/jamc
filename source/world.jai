@@ -138,23 +138,11 @@ generate_chunk_blocks :: (using chunk: *JAMC_Chunk, gen : *Noise_Gen, chunk_x : 
                          block.type = .STONE;
                     }
                 }
-
-                // Grass on top
-                if block.type == .DIRT {
-                     // Check if block above is air (simple proactive check or post-process? 
-                     // Since we don't have access to neighbors easily here, let's just use a threshold trick or leave it as dirt for now)
-                     // Actually, if we are near the surface (density is close to threshold), we can guess.
-                     // But for now, let's just make the top layer grass if we can.
-                     // The noise is continuous, so it's hard to know "top" without checking y+1.
-                     // Let's stick to DIRT/STONE for now to keep it simple and compile-safe.
-                     if y > 60 block.type = .GRASS; // Snow cap/Grass arbitrary separation? 
-                }
             }
         }
     }
 }
 
-// Temporary vertex struct for chunk meshing
 Chunk_Vertex :: struct {
     p : Vector3;
     uv : Vector2;
@@ -162,17 +150,9 @@ Chunk_Vertex :: struct {
 }
 
 get_chunk_key :: inline (x: s32, z: s32) -> s64 {
-    // Pack two s32 into s64
-    // Cast to u64 first to avoid sign extension issues if treating as bits, 
-    // although s64 shift works too if careful. 
-    // Let's verify: s32 has 32 bits. 
-    // We want upper 32 bits to be x, lower 32 bits to be z.
-    // (cast(s64) x) << 32 | (cast(s64) (cast(u32) z))
-    // we use u32 cast for z to ensure we just take the bits effectively.
-    
-    ux := cast(s64) x;
-    uz := cast(s64) cast(u32) z; 
-    return (ux << 32) | uz;
+    top := (cast(s64) x) << 32;
+    bottom := (cast(s64) z) & 0xFFFF_FFFF;
+    return top | bottom;
 }
 
 update_chunk_mesh :: (using chunk: *JAMC_Chunk, all_chunks: *Table(s64, *JAMC_Chunk)) {
@@ -212,13 +192,16 @@ update_chunk_mesh :: (using chunk: *JAMC_Chunk, all_chunks: *Table(s64, *JAMC_Ch
 
         // Neighbor Lookup
         key := get_chunk_key(chunk_idx_x, chunk_idx_z);
-        neighbor, found := table_find(all_chunks, key);
         
-        if !found return true; // Treat unloaded chunks as transparent (or solid? Usually transparent/void)
+        found, neighbor := table_find(all_chunks, key);
+        if !found return true; 
 
         block_index := target_x + (target_y * CHUNK_SIZE) + (target_z * CHUNK_SIZE * CHUNK_HEIGHT);
         
-        target_block := neighbor.blocks[block_index];
+        idx := cast(s64) block_index;
+        if idx < 0 || idx >= TOTAL_BLOCKS return true;
+        
+        target_block := neighbor.blocks[idx];
         return target_block.type == .AIR;
     }
 

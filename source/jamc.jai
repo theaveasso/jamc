@@ -27,7 +27,7 @@ VPIXELS :: 360;
 TARGET_FPS :: 60;
 TARGET_DT  :: 1.0 / TARGET_FPS;
 
-RENDER_DISTANCE :: 16;
+RENDER_DISTANCE :: 4;
 
 Game_Camera :: struct {
     using camera    : Camera;
@@ -289,8 +289,6 @@ update_world_generation :: () {
 
 update_neighbor_mesh :: (x: s32, z: s32) {
     key := get_chunk_key(x, z);
-    chunk, found := table_find(*world, key);
-    if found {
-        update_chunk_mesh(chunk, *world);
-    }
+    found, chunk := table_find(*world, key);
+    if found update_chunk_mesh(chunk, *world);
 }
