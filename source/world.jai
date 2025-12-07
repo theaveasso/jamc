@@ -1,8 +1,8 @@
-CHUNK_SIZE   :: 5;
-CHUNK_HEIGHT :: 3;
+CHUNK_SIZE   :: 16;
+CHUNK_HEIGHT :: 128;
 TOTAL_BLOCKS :: CHUNK_SIZE * CHUNK_SIZE * CHUNK_HEIGHT;
 
-WORLD_SIZE   :: 2;
+WORLD_SIZE   :: 5;
 TOTAL_CHUNKS :: WORLD_SIZE * WORLD_SIZE;
 
 JAMC_Block_Type :: enum u8 {
@@ -78,7 +78,9 @@ Noise_Gen :: struct {
     node: *void;
 }
 
-DEFAULT_ENCODED_TREE :: "DQAAAAAAAADgQBAAAAAAABgAAIA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAA";
+// Simplex Fractal FBM (example string found via search)
+DEFAULT_ENCODED_TREE :: "DQAFAAAAAAAAQAgAAAAAAD8AAAAAAA==";
+
 get_fastnoise_id :: (name : string) -> s32 {
     count := fnGetMetadataCount();
     for i : 0..count - 1 {
@@ -89,10 +91,9 @@ get_fastnoise_id :: (name : string) -> s32 {
 }
 
 init_noise_generator :: (using noise : *Noise_Gen) {
-    simplex_id := get_fastnoise_id("Simplex");
-
     encoded_str := DEFAULT_ENCODED_TREE;
-    node = fnNewFromMetadata(xx simplex_id, 0);
+    c_str := temp_c_string(encoded_str);
+    node = fnNewFromEncodedNodeTree(c_str, 0);
     assert(node != null);
 }
 
@@ -110,16 +111,14 @@ init_chunk :: (using chunk: *JAMC_Chunk, gen : *Noise_Gen, chunk_x : s32, chunk_
             for x : 0..CHUNK_SIZE - 1 {
                 index := x + (y * CHUNK_SIZE) + (z * CHUNK_SIZE * CHUNK_HEIGHT);
                 block := *blocks[index];
-                pos := Vector3.{xx x, xx y, xx z};
+                pos := Vector3.{xx (x + (chunk_x * CHUNK_SIZE)), xx y, xx (z + (chunk_z * CHUNK_SIZE))};
 
                 noise_val := noise_buffer[index];
                 height_gradient := cast(float) y / cast(float) CHUNK_HEIGHT;
                 density := noise_val - (height_gradient * 2.0 - 0.2);
 
                 block_type := JAMC_Block_Type.AIR;
-                if density < 0.05 {
-                    block_type = .GRASS;
-                } else if density < 0.15 {
+                if density < 0.15 {
                     block_type = .DIRT;
                 } else {
                     block_type = .STONE;
